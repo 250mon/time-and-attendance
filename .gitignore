@@ -1,7 +1,6 @@
 # Environment
-.env
-.env.local
-.env.*.local
+.env*
+!.env.example
 
 # Python
 __pycache__/
@@ -18,8 +17,10 @@ htmlcov/
 # Node
 node_modules/
 .next/
+.swc/
 out/
 npm-debug.log*
+*.tsbuildinfo
 
 # IDE
 .idea/
@@ -29,3 +30,5 @@ npm-debug.log*
 
 # Docker
 postgres_data/
+caddy_data/
+caddy_config/

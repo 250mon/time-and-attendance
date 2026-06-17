@@ -1,4 +1,10 @@
 node_modules
 .next
+.swc
 .git
 *.log
+.env*
+coverage
+.vercel
+*.tsbuildinfo
+.DS_Store

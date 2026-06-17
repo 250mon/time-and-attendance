@@ -158,12 +158,54 @@ npm test
 npm run build
 ```
 
+## Deploying to a Linux Server
+
+Production uses `docker-compose.prod.yml`, which adds a [Caddy](https://caddyserver.com/) reverse proxy in front of the app. Caddy terminates TLS (automatic Let's Encrypt certificates) and routes by path on a single domain: `/api/*` → backend, everything else → frontend. Only Caddy's ports (80/443) are exposed to the host; the frontend and backend containers are reachable only on the internal Docker network.
+
+1. **Point DNS at the server.** Create an A (or AAAA) record for your domain pointing at the server's public IP.
+
+2. **Open firewall ports 80 and 443** (and 22 for SSH). Do not expose 3000, 8000, or 5432 publicly.
+
+3. **Copy and configure environment variables:**
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Set at minimum:
+
+   ```dotenv
+   DOMAIN=yourdomain.com
+   FRONTEND_URL=https://yourdomain.com
+   BACKEND_URL=https://yourdomain.com/api
+   NEXT_PUBLIC_BACKEND_URL=https://yourdomain.com/api
+   COOKIE_SECURE=true
+   BACKEND_SECRET_KEY=<long random secret>
+   POSTGRES_PASSWORD=<strong password>
+   SEED_ADMIN_EMAIL=<your admin email>
+   SEED_ADMIN_PASSWORD=<strong password>
+   ```
+
+4. **Build and start the stack:**
+
+   ```bash
+   docker compose -f docker-compose.prod.yml up --build -d
+   ```
+
+   Caddy automatically requests and renews a Let's Encrypt certificate for `DOMAIN` on first start — no certbot or manual cert setup needed. Alembic migrations run automatically as part of the backend's startup command.
+
+5. **Verify:**
+   - `https://yourdomain.com` — frontend
+   - `https://yourdomain.com/api/health` — backend health check
+
+To change which host ports Caddy listens on (e.g. behind another proxy/load balancer), set `HTTP_PORT`/`HTTPS_PORT` in `.env`. For local dev, `FRONTEND_PORT`/`BACKEND_PORT` in `.env` control the host-side port mapping in `docker-compose.yml`.
+
 ## Project Layout
 
 ```text
 backend/     FastAPI application, Alembic migrations, tests
 frontend/    Next.js application
-infra/       Nginx and backup scripts (deployment)
+infra/       Caddy reverse-proxy config and backup scripts (deployment)
 docs/        Product and implementation documentation
 ```
 
