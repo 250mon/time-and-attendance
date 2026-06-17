@@ -1,0 +1,209 @@
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from app.core.kr_labor import annual_leave_entitlement, completed_months_of_service
+from app.core.permissions import can_manage_schedules
+from app.models.enums import AuditAction
+from app.models.leave_balance import LeaveBalance, LeaveBalanceAdjustment
+from app.models.leave_type import LeaveType
+from app.models.user import User
+from app.services import audit_service
+
+
+class LeaveBalanceError(Exception):
+    pass
+
+
+def _dec(value: float | int | Decimal) -> Decimal:
+    return Decimal(str(value))
+
+
+def get_or_create_balance(
+    db: Session,
+    clinic_id: UUID,
+    user_id: UUID,
+    leave_type_id: UUID,
+    year: int,
+) -> LeaveBalance:
+    lt = db.query(LeaveType).filter(LeaveType.id == leave_type_id).first()
+
+    balance = (
+        db.query(LeaveBalance)
+        .filter(
+            LeaveBalance.user_id == user_id,
+            LeaveBalance.leave_type_id == leave_type_id,
+            LeaveBalance.year == year,
+        )
+        .first()
+    )
+
+    if lt and lt.tenure_based:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user and user.hire_date:
+            today = date.today()
+            # Use end-of-year for past years, today for the current year,
+            # and start-of-year for future projections.
+            if year < today.year:
+                as_of = date(year + 1, 1, 1)
+            elif year == today.year:
+                as_of = today
+            else:
+                as_of = date(year, 1, 1)
+            months = completed_months_of_service(user.hire_date, as_of)
+            default = _dec(annual_leave_entitlement(months))
+        else:
+            default = Decimal("0")
+
+        # Refresh an existing balance when the entitlement has grown (current year only).
+        if balance is not None:
+            if balance.balance_days != default:
+                balance.balance_days = default
+                balance.updated_at = datetime.now(UTC)
+                db.flush()
+            return balance
+    else:
+        default = _dec(lt.default_days_per_year) if lt and lt.default_days_per_year else Decimal("0")
+        if balance is not None:
+            return balance
+
+    balance = LeaveBalance(
+        clinic_id=clinic_id,
+        user_id=user_id,
+        leave_type_id=leave_type_id,
+        year=year,
+        balance_days=default,
+        used_days=Decimal("0"),
+    )
+    db.add(balance)
+    db.flush()
+    return balance
+
+
+def has_sufficient_balance(
+    db: Session,
+    clinic_id: UUID,
+    user_id: UUID,
+    leave_type_id: UUID,
+    year: int,
+    days_requested: int,
+) -> bool:
+    balance = get_or_create_balance(db, clinic_id, user_id, leave_type_id, year)
+    return (balance.balance_days - balance.used_days) >= _dec(days_requested)
+
+
+def deduct_balance(
+    db: Session,
+    clinic_id: UUID,
+    user_id: UUID,
+    leave_type_id: UUID,
+    year: int,
+    days: int,
+) -> None:
+    balance = get_or_create_balance(db, clinic_id, user_id, leave_type_id, year)
+    balance.used_days += _dec(days)
+    balance.updated_at = datetime.now(UTC)
+
+
+def restore_balance(
+    db: Session,
+    clinic_id: UUID,
+    user_id: UUID,
+    leave_type_id: UUID,
+    year: int,
+    days: int,
+) -> None:
+    balance = (
+        db.query(LeaveBalance)
+        .filter(
+            LeaveBalance.user_id == user_id,
+            LeaveBalance.leave_type_id == leave_type_id,
+            LeaveBalance.year == year,
+        )
+        .first()
+    )
+    if balance:
+        balance.used_days = max(Decimal("0"), balance.used_days - _dec(days))
+        balance.updated_at = datetime.now(UTC)
+
+
+def adjust_balance(
+    db: Session,
+    actor: User,
+    user_id: UUID,
+    leave_type_id: UUID,
+    year: int,
+    delta_days: float,
+    reason: str,
+) -> LeaveBalance:
+    if not can_manage_schedules(actor):
+        raise LeaveBalanceError("Insufficient permissions.")
+
+    target = db.query(User).filter(User.id == user_id, User.clinic_id == actor.clinic_id).first()
+    if not target:
+        raise LeaveBalanceError("User not found.")
+
+    lt = db.query(LeaveType).filter(
+        LeaveType.id == leave_type_id, LeaveType.clinic_id == actor.clinic_id
+    ).first()
+    if not lt:
+        raise LeaveBalanceError("Leave type not found.")
+
+    balance = get_or_create_balance(db, actor.clinic_id, user_id, leave_type_id, year)
+
+    # delta_days=0 is used purely to trigger balance initialisation; skip adjustment records.
+    if _dec(delta_days) != Decimal("0"):
+        new_balance = balance.balance_days + _dec(delta_days)
+        if new_balance < Decimal("0"):
+            raise LeaveBalanceError("Adjustment would result in a negative allocation.")
+        balance.balance_days = new_balance
+        balance.updated_at = datetime.now(UTC)
+
+        adj = LeaveBalanceAdjustment(
+            clinic_id=actor.clinic_id,
+            leave_balance_id=balance.id,
+            adjusted_by=actor.id,
+            delta_days=_dec(delta_days),
+            reason=reason,
+        )
+        db.add(adj)
+
+        audit_service.log_action(
+            db, actor.id, actor.clinic_id, AuditAction.BALANCE_ADJUSTED,
+            entity_type="leave_balance",
+            entity_id=str(balance.id),
+            metadata={
+                "user_id": str(user_id),
+                "leave_type_id": str(leave_type_id),
+                "year": year,
+                "delta_days": delta_days,
+                "reason": reason,
+                "new_balance_days": float(balance.balance_days),
+            },
+        )
+
+    db.commit()
+    db.refresh(balance)
+    return balance
+
+
+def list_balances(
+    db: Session,
+    actor: User,
+    user_id: UUID | None = None,
+    year: int | None = None,
+) -> list[LeaveBalance]:
+    q = db.query(LeaveBalance).filter(LeaveBalance.clinic_id == actor.clinic_id)
+
+    if can_manage_schedules(actor):
+        if user_id:
+            q = q.filter(LeaveBalance.user_id == user_id)
+    else:
+        q = q.filter(LeaveBalance.user_id == actor.id)
+
+    if year:
+        q = q.filter(LeaveBalance.year == year)
+
+    return q.order_by(LeaveBalance.user_id, LeaveBalance.year, LeaveBalance.leave_type_id).all()
