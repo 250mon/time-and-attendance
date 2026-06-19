@@ -158,6 +158,36 @@ npm test
 npm run build
 ```
 
+## Configuring URLs, Ports, and the Database
+
+### Application URLs
+
+| Variable | Read by | Purpose |
+|---|---|---|
+| `FRONTEND_URL` | backend | The only origin allowed by CORS — must exactly match the URL the browser uses to load the app, including the port if one is in the address bar. |
+| `NEXT_PUBLIC_BACKEND_URL` | frontend (browser) | Base URL the browser's JS uses for every API call (`lib/api-client.ts`). It's read when the frontend container starts (`npm run build`/`next dev`), so restart the frontend after changing it. |
+| `BACKEND_URL` | — | Not currently read by application code; kept as a documented placeholder for the backend's public URL. |
+
+How these are set differs between dev and prod because prod puts Caddy in front of both apps on one domain:
+
+- **Local dev** (`docker-compose.yml`, no reverse proxy) — frontend and backend sit on separate host ports, so the URLs must include them, e.g. `FRONTEND_URL=http://localhost:3000`, `NEXT_PUBLIC_BACKEND_URL=http://localhost:8000`.
+- **Production** (`docker-compose.prod.yml`, Caddy in front) — both are served from a single `DOMAIN` with path-based routing, so neither needs a port, and the backend URL gets an `/api` suffix that Caddy strips before forwarding internally: `FRONTEND_URL=https://yourdomain.com`, `NEXT_PUBLIC_BACKEND_URL=https://yourdomain.com/api`. This keeps the login cookie same-site (no `SameSite=None` workaround needed).
+
+### Ports
+
+| Variable | Used by | Default |
+|---|---|---|
+| `FRONTEND_PORT` | `docker-compose.yml` (dev) | `3000` |
+| `BACKEND_PORT` | `docker-compose.yml` (dev) | `8000` |
+| `HTTP_PORT` | `docker-compose.prod.yml` (Caddy) | `80` |
+| `HTTPS_PORT` | `docker-compose.prod.yml` (Caddy) | `443` |
+
+These only change the **host-side** port mapping; the containers always listen on their standard internal ports.
+
+### Database
+
+`DATABASE_URL` can be set in `.env` to point at any reachable PostgreSQL instance — a managed database, a different host, a non-default port, etc. When set, it takes precedence over the bundled `postgres` service entirely. Leave it unset (or matching `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`) to use the `postgres` container Docker Compose starts for you.
+
 ## Deploying to a Linux Server
 
 Production uses `docker-compose.prod.yml`, which adds a [Caddy](https://caddyserver.com/) reverse proxy in front of the app. Caddy terminates TLS (automatic Let's Encrypt certificates) and routes by path on a single domain: `/api/*` → backend, everything else → frontend. Only Caddy's ports (80/443) are exposed to the host; the frontend and backend containers are reachable only on the internal Docker network.

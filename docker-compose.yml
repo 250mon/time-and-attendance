@@ -22,7 +22,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-clinic_time_user}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-clinic_time}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-clinic_time_user}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-clinic_time}}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
