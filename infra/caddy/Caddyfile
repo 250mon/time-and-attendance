@@ -1,5 +1,6 @@
 {
 	auto_https disable_redirects
+	default_sni {$DOMAIN:localhost}
 }
 
 {$DOMAIN:localhost}:{$HTTPS_PORT:443} {
