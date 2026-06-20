@@ -10,16 +10,18 @@ Lightweight time-and-attendance and leave-management system for small clinics.
 
 ## Getting Started
 
+These steps run the local development stack (`docker-compose.dev.yml`), with hot-reload and no reverse proxy. See [Deploying to a Linux Server](#deploying-to-a-linux-server) for the production stack.
+
 1. Copy environment defaults:
 
    ```bash
-   cp .env.example .env
+   cp dev.env.example dev.env
    ```
 
 2. Start all services:
 
    ```bash
-   docker compose up --build
+   docker compose -f docker-compose.dev.yml --env-file dev.env up --build
    ```
 
 3. Open the app:
@@ -39,7 +41,7 @@ The backend seeds a default clinic, admin account, Korean labor law leave types,
 | Password | `123456`            |
 | Role     | Owner (full access) |
 
-These values come from `.env`. Change them before deploying to production:
+These values come from `dev.env` (or `.env` in production). Change them before deploying to production:
 
 ```dotenv
 SEED_CLINIC_NAME=My Clinic
@@ -75,8 +77,8 @@ Six leave types are created automatically based on Korean labor law:
 > **To re-seed from scratch**, drop and recreate the database:
 >
 > ```bash
-> docker compose down -v   # removes the postgres volume
-> docker compose up --build
+> docker compose -f docker-compose.dev.yml --env-file dev.env down -v   # removes the postgres volume
+> docker compose -f docker-compose.dev.yml --env-file dev.env up --build
 > ```
 
 ## Using the App
@@ -145,7 +147,7 @@ mypy app
 uvicorn app.main:app --reload
 ```
 
-Tests require a running PostgreSQL instance with a `clinic_time_test` database. The Docker Compose postgres service creates it automatically; for local runs use `docker compose up postgres`.
+Tests require a running PostgreSQL instance with a `clinic_time_test` database. The Docker Compose postgres service creates it automatically; for local runs use `docker compose -f docker-compose.dev.yml --env-file dev.env up postgres`.
 
 ### Frontend
 
@@ -170,27 +172,27 @@ npm run build
 
 How these are set differs between dev and prod because prod puts Caddy in front of both apps on one domain:
 
-- **Local dev** (`docker-compose.yml`, no reverse proxy) — frontend and backend sit on separate host ports, so the URLs must include them, e.g. `FRONTEND_URL=http://localhost:3000`, `NEXT_PUBLIC_BACKEND_URL=http://localhost:8000`.
-- **Production** (`docker-compose.prod.yml`, Caddy in front) — both are served from a single `DOMAIN` with path-based routing, so neither needs a port, and the backend URL gets an `/api` suffix that Caddy strips before forwarding internally: `FRONTEND_URL=https://yourdomain.com`, `NEXT_PUBLIC_BACKEND_URL=https://yourdomain.com/api`. This keeps the login cookie same-site (no `SameSite=None` workaround needed).
+- **Local dev** (`docker-compose.dev.yml`, `dev.env`, no reverse proxy) — frontend and backend sit on separate host ports, so the URLs must include them, e.g. `FRONTEND_URL=http://localhost:3000`, `NEXT_PUBLIC_BACKEND_URL=http://localhost:8000`.
+- **Production** (`docker-compose.yml`, `.env`, Caddy in front) — both are served from a single `DOMAIN` with path-based routing, so neither needs a port, and the backend URL gets an `/api` suffix that Caddy strips before forwarding internally: `FRONTEND_URL=https://yourdomain.com`, `NEXT_PUBLIC_BACKEND_URL=https://yourdomain.com/api`. This keeps the login cookie same-site (no `SameSite=None` workaround needed).
 
 ### Ports
 
 | Variable | Used by | Default |
 |---|---|---|
-| `FRONTEND_PORT` | `docker-compose.yml` (dev) | `3000` |
-| `BACKEND_PORT` | `docker-compose.yml` (dev) | `8000` |
-| `HTTP_PORT` | `docker-compose.prod.yml` (Caddy) | `80` |
-| `HTTPS_PORT` | `docker-compose.prod.yml` (Caddy) | `443` |
+| `FRONTEND_PORT` | `docker-compose.dev.yml` | `3000` |
+| `BACKEND_PORT` | `docker-compose.dev.yml` | `8000` |
+| `HTTP_PORT` | `docker-compose.yml` (Caddy) | `80` |
+| `HTTPS_PORT` | `docker-compose.yml` (Caddy) | `443` |
 
 These only change the **host-side** port mapping; the containers always listen on their standard internal ports.
 
 ### Database
 
-`DATABASE_URL` can be set in `.env` to point at any reachable PostgreSQL instance — a managed database, a different host, a non-default port, etc. When set, it takes precedence over the bundled `postgres` service entirely. Leave it unset (or matching `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`) to use the `postgres` container Docker Compose starts for you.
+`DATABASE_URL` can be set in `.env`/`dev.env` to point at any reachable PostgreSQL instance — a managed database, a different host, a non-default port, etc. When set, it takes precedence over the bundled `postgres` service entirely. Leave it unset (or matching `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`) to use the `postgres` container Docker Compose starts for you.
 
 ## Deploying to a Linux Server
 
-Production uses `docker-compose.prod.yml`, which adds a [Caddy](https://caddyserver.com/) reverse proxy in front of the app. Caddy terminates TLS (automatic Let's Encrypt certificates) and routes by path on a single domain: `/api/*` → backend, everything else → frontend. Only Caddy's ports (80/443) are exposed to the host; the frontend and backend containers are reachable only on the internal Docker network.
+Production uses `docker-compose.yml`, which adds a [Caddy](https://caddyserver.com/) reverse proxy in front of the app. Caddy terminates TLS (automatic Let's Encrypt certificates) and routes by path on a single domain: `/api/*` → backend, everything else → frontend. Only Caddy's ports (80/443) are exposed to the host; the frontend and backend containers are reachable only on the internal Docker network.
 
 1. **Point DNS at the server.** Create an A (or AAAA) record for your domain pointing at the server's public IP.
 
@@ -219,7 +221,7 @@ Production uses `docker-compose.prod.yml`, which adds a [Caddy](https://caddyser
 4. **Build and start the stack:**
 
    ```bash
-   docker compose -f docker-compose.prod.yml up --build -d
+   docker compose up --build -d
    ```
 
    Caddy automatically requests and renews a Let's Encrypt certificate for `DOMAIN` on first start — no certbot or manual cert setup needed. Alembic migrations run automatically as part of the backend's startup command.
@@ -228,7 +230,7 @@ Production uses `docker-compose.prod.yml`, which adds a [Caddy](https://caddyser
    - `https://yourdomain.com` — frontend
    - `https://yourdomain.com/api/health` — backend health check
 
-To change which host ports Caddy listens on (e.g. behind another proxy/load balancer), set `HTTP_PORT`/`HTTPS_PORT` in `.env`. For local dev, `FRONTEND_PORT`/`BACKEND_PORT` in `.env` control the host-side port mapping in `docker-compose.yml`.
+To change which host ports Caddy listens on (e.g. behind another proxy/load balancer), set `HTTP_PORT`/`HTTPS_PORT` in `.env`. For local dev, `FRONTEND_PORT`/`BACKEND_PORT` in `dev.env` control the host-side port mapping in `docker-compose.dev.yml`.
 
 ## Project Layout
 

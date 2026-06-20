@@ -6,18 +6,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ClinicTime** — a time-and-attendance and leave-management system for small clinics. The monorepo contains a FastAPI backend (`backend/`), a Next.js 16 frontend (`frontend/`), and Docker Compose infrastructure.
 
+Two Docker Compose stacks exist: `docker-compose.yml` is **production** (Caddy reverse proxy, env from `.env`) and is what plain `docker compose ...` targets by default. `docker-compose.dev.yml` is **local dev** (hot-reload, no proxy, separate frontend/backend ports, env from `dev.env`) and must be selected explicitly with `-f docker-compose.dev.yml --env-file dev.env`.
+
 ## Commands
 
-### Full stack (Docker)
+### Full stack (Docker, local dev)
 
 ```bash
-cp .env.example .env
-docker compose up --build
+cp dev.env.example dev.env
+docker compose -f docker-compose.dev.yml --env-file dev.env up --build
 ```
 
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000/docs
-- Default seed admin: `admin@clinic.example` / `ChangeMe123!` (set in `.env`)
+- Default seed admin: `admin@clinic.example` / `ChangeMe123!` (set in `dev.env`)
+
+### Full stack (Docker, production)
+
+```bash
+cp .env.example .env
+docker compose up --build -d
+```
+
+Serves both apps behind Caddy on `HTTP_PORT`/`HTTPS_PORT` (see `.env`); see `README.md` for full deployment steps.
 
 ### Backend (local)
 
@@ -34,7 +45,7 @@ alembic upgrade head           # apply migrations
 uvicorn app.main:app --reload  # dev server
 ```
 
-Tests require a running PostgreSQL instance with a `clinic_time_test` database. The Docker Compose service (`infra/postgres/init-test-db.sh`) creates it automatically; for local runs, create it manually or `docker compose up postgres`.
+Tests require a running PostgreSQL instance with a `clinic_time_test` database. The Docker Compose service (`infra/postgres/init-test-db.sh`) creates it automatically; for local runs, create it manually or `docker compose -f docker-compose.dev.yml --env-file dev.env up postgres`.
 
 ### Frontend (local)
 
@@ -131,7 +142,7 @@ The codebase has completed **Phase 0** (foundation) and **Phase 1** (auth + staf
 
 ## Environment Variables
 
-Key vars (see `.env.example` for full list):
+Key vars (see `.env.example` for production, `dev.env.example` for local dev):
 
 | Variable | Purpose |
 |---|---|

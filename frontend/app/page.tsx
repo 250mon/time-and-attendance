@@ -39,7 +39,7 @@ export default function HomePage() {
           Sign in to manage staff, track attendance, and handle leave requests.
         </p>
 
-        <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm">
+        <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700">
           <span
             className={`h-2.5 w-2.5 rounded-full ${
               backendStatus === "ok"

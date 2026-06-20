@@ -25,7 +25,7 @@ Planned commands after scaffolding:
 - `cd backend && mypy app` runs Python type checks.
 - `cd frontend && npm run dev` starts the Next.js app locally.
 - `cd frontend && npm test` runs frontend tests once available.
-- `docker compose up --build` starts frontend, backend, and PostgreSQL services.
+- `docker compose -f docker-compose.dev.yml --env-file dev.env up --build` starts frontend, backend, and PostgreSQL services for local dev (`docker compose up --build` runs the production stack instead).
 
 ## Coding Style & Naming Conventions
 
