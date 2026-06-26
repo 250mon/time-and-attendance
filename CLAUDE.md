@@ -66,9 +66,11 @@ Layered FastAPI app — route handlers are thin; all business logic lives in ser
 
 ```
 core/
-  config.py       — Pydantic Settings from env vars
-  security.py     — bcrypt password hashing, JWT (HS256) creation/decode
-  permissions.py  — role/status guard helpers
+  config.py         — Pydantic Settings from env vars
+  security.py       — bcrypt password hashing, JWT (HS256) creation/decode
+  permissions.py    — role/status guard helpers
+  leave_accrual.py  — dual-track annual leave engine (legal + fiscal + adjustment)
+  kr_labor.py       — calendar-year balance facade over leave_accrual
 api/
   deps.py         — FastAPI dependency: get_current_user, require_roles(*roles)
   routes/         — one file per resource (auth, staff, health, …)
@@ -100,9 +102,11 @@ components/
   RequireAuth.tsx   — redirects to /login if no authenticated user
   AppShell.tsx      — nav shell rendered around all protected pages
   PlaceholderPage.tsx — stub used for not-yet-implemented sections
+  LeavePolicyWarning.tsx — badges/banners for over-max non-annual leave requests
 lib/
   api-client.ts     — axios instance (withCredentials: true), typed API functions
   validation.ts     — Zod schemas shared across forms
+  leave-years.ts    — calendar-year helpers for leave balance UI
 hooks/
   useBackendHealth.ts
 types/index.ts      — shared TypeScript types (User, UserRole, StaffCreateInput, …)
@@ -117,18 +121,20 @@ All API calls go through `lib/api-client.ts` using `withCredentials: true` so th
 - **`DELETE /staff/{id}` deactivates, never deletes.**
 - **Managers cannot approve their own leave or correction requests.**
 - **Monthly locking** (`monthly_closings`) blocks all edits to that period's records.
-- **Audit logging** is required for: corrections approved/rejected, leave approved/rejected, balance adjustments, month lock/unlock, report exports.
+- **Audit logging** is required for: corrections approved/rejected, leave approved/rejected/submitted (over-max policy warnings), balance adjustments, month lock/unlock, report exports.
+- **Annual leave only** receives yearly balance allocation (`tenure_based` leave types). Other leave types track usage only; `default_days_per_year` is max days per single request.
+- **Over-max non-annual requests** are allowed with `policy_warning` flags; managers see badges during review.
 
 ## Development Phase Status
 
-The codebase has completed **Phase 0** (foundation) and **Phase 1** (auth + staff management). Remaining phases per `docs/2_DevelopmentGuide.md`:
+Phases **0–1** (foundation, auth, staff) and parts of **6–7** (leave types, requests, annual leave accrual engine) are implemented. Remaining phases per `docs/2_DevelopmentGuide.md`:
 
 2. Shift and schedule management
 3. Clock-in / clock-out
 4. Attendance calculation engine
 5. Correction request workflow
-6. Leave management
-7. Leave balance engine
+6. Leave management (historical import, team calendar — partial)
+7. Leave balance engine (opening balances, historical import — partial)
 8. Reports and exports
 9. Monthly closing and audit log
 10. Testing, deployment, hardening
@@ -151,3 +157,6 @@ Key vars (see `.env.example` for production, `dev.env.example` for local dev):
 | `NEXT_PUBLIC_BACKEND_URL` | Frontend → backend URL |
 | `CLINIC_TIMEZONE` | Default `Asia/Seoul`; used in all time calculations |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Bootstrap admin credentials |
+| `LEAVE_FISCAL_START_MONTH` / `LEAVE_FISCAL_START_DAY` | Fiscal year start (default Jan 1) |
+| `LEAVE_FISCAL_ROUNDING` | Fiscal proration rounding (`round_2` default) |
+| `LEAVE_ADJUSTMENT_MODE` | Legal top-up mode: `anniversary_top_up`, `termination_only`, `none` |

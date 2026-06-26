@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import { LeavePolicyWarningBadge, LeavePolicyWarningBanner } from "@/components/LeavePolicyWarning";
 import {
   adjustLeaveBalance,
   cancelLeaveRequest,
@@ -14,6 +15,7 @@ import {
   fetchStaff,
   getApiErrorMessage,
 } from "@/lib/api-client";
+import { calendarYearsFromHire, isDateInCalendarYear } from "@/lib/leave-years";
 import type { LeaveBalance, LeaveRequest, LeaveStatus, LeaveType, User } from "@/types";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -46,9 +48,27 @@ function BalanceCard({ balance, leaveTypes, year }: {
   leaveTypes: LeaveType[];
   year: number;
 }) {
-  const typeName = leaveTypes.find((t) => t.id === balance.leave_type_id)?.name ?? "—";
-  const pct = balance.balance_days > 0 ? (balance.used_days / balance.balance_days) * 100 : 0;
-  const low = balance.remaining_days <= 3 && balance.balance_days > 0;
+  const lt = leaveTypes.find((t) => t.id === balance.leave_type_id);
+  const typeName = lt?.name ?? "—";
+  const isAnnual = lt?.tenure_based ?? false;
+  const pct = isAnnual && balance.balance_days > 0
+    ? (balance.used_days / balance.balance_days) * 100
+    : 0;
+  const low = isAnnual && balance.remaining_days <= 3 && balance.balance_days > 0;
+
+  if (!isAnnual) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <p className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">{typeName}</p>
+        <p className="mt-1 text-2xl font-bold text-slate-800 dark:text-slate-200">
+          {balance.used_days}
+          <span className="ml-1 text-sm font-normal text-slate-500 dark:text-slate-400">days used</span>
+        </p>
+        <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">{year}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <p className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">{typeName}</p>
@@ -75,17 +95,7 @@ export default function LeavePage() {
   const { user, canManageStaff } = useAuth();
   const isAdmin = canManageStaff;
 
-  // Build per-staff service-year options from hire date.
-  // Each service year starts on the hire anniversary and maps to that calendar year for API calls.
-  const hireDate = user?.hire_date ? new Date(user.hire_date + "T00:00:00") : null;
-  const hireYear = hireDate?.getFullYear() ?? CURRENT_YEAR;
-  const serviceYears: { year: number; label: string }[] = [];
-  for (let y = hireYear; y <= CURRENT_YEAR + 1; y++) {
-    const label = hireDate
-      ? `${y}.${hireDate.getMonth() + 1}.${hireDate.getDate()}`
-      : String(y);
-    serviceYears.push({ year: y, label });
-  }
+  const calendarYears = calendarYearsFromHire(user?.hire_date, CURRENT_YEAR + 1);
 
   // Shared data
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
@@ -101,6 +111,7 @@ export default function LeavePage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ leave_type_id: "", start_date: "", end_date: "", reason: "" });
   const [formError, setFormError] = useState<string | null>(null);
+  const [submitSuccessMessage, setSubmitSuccessMessage] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
 
   // Admin view
@@ -122,7 +133,12 @@ export default function LeavePage() {
         setRequests(reqs as LeaveRequest[]);
         setBalances(bal as LeaveBalance[]);
         // Track only the current user's current-year balances for the request form.
-        setMyCurrentYearBalances((bal as LeaveBalance[]).filter((b) => b.user_id === user?.id));
+        setMyCurrentYearBalances(
+          (bal as LeaveBalance[]).filter((b) => {
+            const lt = (types as LeaveType[]).find((t) => t.id === b.leave_type_id);
+            return b.user_id === user?.id && lt?.tenure_based;
+          })
+        );
         if (staffList) setStaff(staffList as User[]);
       })
       .catch((e) => setErrorMessage(getApiErrorMessage(e, "Unable to load leave data")))
@@ -136,9 +152,9 @@ export default function LeavePage() {
     setBalancesLoading(true);
     fetchLeaveBalances({ year })
       .then(async (bal) => {
-        if (bal.length === 0 && year < CURRENT_YEAR && myCurrentYearBalances.length > 0) {
+        if (bal.length === 0 && year < CURRENT_YEAR && myAnnualBalances.length > 0) {
           await Promise.allSettled(
-            myCurrentYearBalances.map((b) =>
+            myAnnualBalances.map((b) =>
               adjustLeaveBalance({
                 user_id: user!.id,
                 leave_type_id: b.leave_type_id,
@@ -165,8 +181,9 @@ export default function LeavePage() {
     }
     setActing(true);
     setFormError(null);
+    setSubmitSuccessMessage(null);
     try {
-      await createLeaveRequest({
+      const created = await createLeaveRequest({
         leave_type_id: form.leave_type_id,
         start_date: form.start_date,
         end_date: form.end_date,
@@ -174,6 +191,13 @@ export default function LeavePage() {
       });
       setShowForm(false);
       setForm({ leave_type_id: "", start_date: "", end_date: "", reason: "" });
+      if (created.policy_warning) {
+        setSubmitSuccessMessage(
+          `Request submitted. ${created.policy_warning} Your manager will review it.`,
+        );
+      } else {
+        setSubmitSuccessMessage("Leave request submitted.");
+      }
       fetchLeaveRequests().then(setRequests);
       fetchLeaveBalances({ year }).then((bal) => {
         setBalances(bal);
@@ -216,17 +240,28 @@ export default function LeavePage() {
   const myRequests = isAdmin ? requests.filter((r) => r.user_id === user?.id) : requests;
   const pendingCount = myRequests.filter((r) => r.status === "PENDING").length;
 
-  // Filter requests to only those whose start_date falls within the selected service period.
-  const periodStart = hireDate
-    ? new Date(year, hireDate.getMonth(), hireDate.getDate())
-    : new Date(year, 0, 1);
-  const periodEnd = hireDate
-    ? new Date(year + 1, hireDate.getMonth(), hireDate.getDate())
-    : new Date(year + 1, 0, 1);
-  const periodRequests = myRequests.filter((r) => {
-    const d = new Date(r.start_date + "T00:00:00");
-    return d >= periodStart && d < periodEnd;
-  });
+  const activeLeaveTypes = leaveTypes.filter((t) => t.active);
+  const selectedLeaveType = activeLeaveTypes.find((lt) => lt.id === form.leave_type_id);
+  const formDuration =
+    form.start_date && form.end_date && form.end_date >= form.start_date
+      ? Math.max(1, Math.round((new Date(form.end_date).getTime() - new Date(form.start_date).getTime()) / 86400000) + 1)
+      : 0;
+  const formExceedsMax =
+    selectedLeaveType != null
+    && !selectedLeaveType.tenure_based
+    && selectedLeaveType.default_days_per_year != null
+    && formDuration > selectedLeaveType.default_days_per_year;
+  const annualBalances = balances.filter((b) =>
+    activeLeaveTypes.some((t) => t.id === b.leave_type_id && t.tenure_based)
+  );
+  const usageOnlyBalances = balances.filter((b) =>
+    activeLeaveTypes.some((t) => t.id === b.leave_type_id && !t.tenure_based)
+  );
+  const myAnnualBalances = myCurrentYearBalances.filter((b) =>
+    activeLeaveTypes.some((t) => t.id === b.leave_type_id && t.tenure_based)
+  );
+
+  const periodRequests = myRequests.filter((r) => isDateInCalendarYear(r.start_date, year));
 
   if (loading) {
     return <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>;
@@ -261,6 +296,11 @@ export default function LeavePage() {
       </div>
 
       {errorMessage && <p className="text-sm text-rose-600 dark:text-rose-400">{errorMessage}</p>}
+      {submitSuccessMessage && (
+        <p className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800 dark:border-teal-800 dark:bg-teal-950 dark:text-teal-200">
+          {submitSuccessMessage}
+        </p>
+      )}
 
       {/* ── Admin: staff summary cards ─────────────────────────────────── */}
       {isAdmin && employeeSummaries && (
@@ -315,9 +355,9 @@ export default function LeavePage() {
       {!isAdmin && (
         <>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Period</span>
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Year</span>
             <div className="flex flex-wrap gap-1">
-              {serviceYears.map(({ year: y, label }) => (
+              {calendarYears.map((y) => (
                 <button
                   key={y}
                   type="button"
@@ -328,7 +368,7 @@ export default function LeavePage() {
                       : "border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-800"
                   }`}
                 >
-                  {label}
+                  {y}
                 </button>
               ))}
             </div>
@@ -336,14 +376,32 @@ export default function LeavePage() {
 
           {balancesLoading ? (
             <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
-          ) : balances.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">No leave balances for {year}.</p>
+          ) : annualBalances.length === 0 && usageOnlyBalances.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">No annual leave or recorded usage for {year}.</p>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {balances.map((b) => (
-                <BalanceCard key={b.id} balance={b} leaveTypes={leaveTypes} year={year} />
-              ))}
-            </div>
+            <>
+              {annualBalances.length > 0 && (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  {annualBalances.map((b) => (
+                    <BalanceCard key={b.id} balance={b} leaveTypes={leaveTypes} year={year} />
+                  ))}
+                </div>
+              )}
+              {usageOnlyBalances.length > 0 && (
+                <div className={annualBalances.length > 0 ? "mt-4" : ""}>
+                  {annualBalances.length > 0 && (
+                    <h2 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Other leave used
+                    </h2>
+                  )}
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                    {usageOnlyBalances.map((b) => (
+                      <BalanceCard key={b.id} balance={b} leaveTypes={leaveTypes} year={year} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
@@ -352,9 +410,9 @@ export default function LeavePage() {
       {showForm && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-slate-100">New Leave Request</h2>
-          {myCurrentYearBalances.length === 0 ? (
+          {activeLeaveTypes.length === 0 ? (
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              No leave types have been assigned to you yet. Contact your manager.
+              No leave types are configured. Contact your manager.
             </p>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -367,12 +425,19 @@ export default function LeavePage() {
                     required className={inputCls}
                   >
                     <option value="">Select…</option>
-                    {myCurrentYearBalances.map((b) => {
-                      const lt = leaveTypes.find((t) => t.id === b.leave_type_id);
-                      if (!lt) return null;
+                    {activeLeaveTypes.map((lt) => {
+                      const bal = balances.find(
+                        (b) => b.leave_type_id === lt.id && b.year === year
+                      );
+                      let suffix = "";
+                      if (lt.tenure_based) {
+                        suffix = ` (${bal?.remaining_days ?? "—"} days remaining)`;
+                      } else if (lt.default_days_per_year != null) {
+                        suffix = ` (max ${lt.default_days_per_year} days/request)`;
+                      }
                       return (
                         <option key={lt.id} value={lt.id}>
-                          {lt.name} ({b.remaining_days} days remaining)
+                          {lt.name}{suffix}
                         </option>
                       );
                     })}
@@ -403,9 +468,14 @@ export default function LeavePage() {
                 <p className="text-sm text-slate-500 dark:text-slate-400">
                   Duration:{" "}
                   <span className="font-medium text-slate-700 dark:text-slate-300">
-                    {Math.max(1, Math.round((new Date(form.end_date).getTime() - new Date(form.start_date).getTime()) / 86400000) + 1)} day(s)
+                    {formDuration} day(s)
                   </span>
                 </p>
+              )}
+              {formExceedsMax && selectedLeaveType?.default_days_per_year != null && (
+                <LeavePolicyWarningBanner
+                  warning={`This request is ${formDuration} days, which exceeds the usual maximum of ${selectedLeaveType.default_days_per_year} days per request. You can still submit it for manager review.`}
+                />
               )}
               {formError && <p className="text-sm text-rose-600 dark:text-rose-400">{formError}</p>}
               <div className="flex gap-3">
@@ -447,7 +517,10 @@ export default function LeavePage() {
                   const typeName = leaveTypes.find((t) => t.id === req.leave_type_id)?.name ?? "—";
                   return (
                     <tr key={req.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
-                      <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">{typeName}</td>
+                      <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">
+                        {typeName}
+                        <LeavePolicyWarningBadge warning={req.policy_warning} />
+                      </td>
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
                         {fmtDate(req.start_date)}{req.start_date !== req.end_date && <> – {fmtDate(req.end_date)}</>}
                       </td>

@@ -118,7 +118,7 @@ def create_leave_request(
         )
     except req_svc.LeaveRequestError as exc:
         raise _handle_req(exc) from exc
-    return LeaveRequestResponse.model_validate(req)
+    return req_svc.build_leave_request_response(db, req)
 
 
 @router.get("/requests", response_model=list[LeaveRequestResponse])
@@ -130,7 +130,7 @@ def list_leave_requests(
 ) -> list[LeaveRequestResponse]:
     uid = UUID(user_id) if user_id else None
     reqs = req_svc.list_leave_requests(db, current_user, status_filter=status_filter, user_id_filter=uid)
-    return [LeaveRequestResponse.model_validate(r) for r in reqs]
+    return req_svc.build_leave_request_responses(db, reqs)
 
 
 @router.get("/requests/{request_id}", response_model=LeaveRequestResponse)
@@ -143,7 +143,7 @@ def get_leave_request(
         req = req_svc.get_leave_request(db, current_user, request_id)
     except req_svc.LeaveRequestError as exc:
         raise _handle_req(exc) from exc
-    return LeaveRequestResponse.model_validate(req)
+    return req_svc.build_leave_request_response(db, req)
 
 
 @router.post("/requests/{request_id}/approve", response_model=LeaveRequestResponse)
@@ -157,7 +157,7 @@ def approve_leave_request(
         req = req_svc.approve_leave_request(db, current_user, request_id, reviewer_note=payload.reviewer_note)
     except req_svc.LeaveRequestError as exc:
         raise _handle_req(exc) from exc
-    return LeaveRequestResponse.model_validate(req)
+    return req_svc.build_leave_request_response(db, req)
 
 
 @router.post("/requests/{request_id}/reject", response_model=LeaveRequestResponse)
@@ -171,7 +171,7 @@ def reject_leave_request(
         req = req_svc.reject_leave_request(db, current_user, request_id, reviewer_note=payload.reviewer_note)
     except req_svc.LeaveRequestError as exc:
         raise _handle_req(exc) from exc
-    return LeaveRequestResponse.model_validate(req)
+    return req_svc.build_leave_request_response(db, req)
 
 
 @router.delete("/requests/{request_id}", response_model=LeaveRequestResponse)
@@ -184,7 +184,7 @@ def cancel_leave_request(
         req = req_svc.cancel_leave_request(db, current_user, request_id)
     except req_svc.LeaveRequestError as exc:
         raise _handle_req(exc) from exc
-    return LeaveRequestResponse.model_validate(req)
+    return req_svc.build_leave_request_response(db, req)
 
 
 # ── Leave Balances ────────────────────────────────────────────────────────────

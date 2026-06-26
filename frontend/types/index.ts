@@ -154,6 +154,9 @@ export type LeaveRequest = {
   reviewed_at: string | null;
   created_at: string;
   updated_at: string;
+  exceeds_per_request_max?: boolean;
+  max_days_per_request?: number | null;
+  policy_warning?: string | null;
 };
 
 export type LeaveRequestCreateInput = {

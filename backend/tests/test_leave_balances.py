@@ -359,3 +359,102 @@ def test_list_balances_year_filter(client: TestClient) -> None:
     resp = client.get("/leave/balances", params={"year": YEAR + 1, "user_id": staff_id})
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+def test_non_annual_leave_warns_when_exceeding_per_request_max(client: TestClient) -> None:
+    """Non-annual types warn (but allow) when a request exceeds the per-request maximum."""
+    lt = _create_leave_type(client, name="Sick Leave", days=2)
+    login(client, "staff@test.example", "StaffPass123")
+
+    resp = client.post("/leave/requests", json={
+        "leave_type_id": lt["id"],
+        "start_date": NEXT_WEEK_START,
+        "end_date": NEXT_WEEK_END,
+    })
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["exceeds_per_request_max"] is True
+    assert data["max_days_per_request"] == 2
+    assert data["policy_warning"] is not None
+    assert "per request" in data["policy_warning"].lower()
+
+
+def test_non_annual_leave_allows_request_within_per_request_max(client: TestClient) -> None:
+    lt = _create_leave_type(client, name="Sick Leave", days=3)
+    login(client, "staff@test.example", "StaffPass123")
+
+    resp = client.post("/leave/requests", json={
+        "leave_type_id": lt["id"],
+        "start_date": NEXT_WEEK_START,
+        "end_date": NEXT_WEEK_END,
+    })
+    assert resp.status_code == 201, resp.text
+
+
+def test_non_annual_multiple_requests_not_capped_yearly(client: TestClient) -> None:
+    """Per-request max does not limit total usage across multiple approved requests."""
+    lt = _create_leave_type(client, name="Sick Leave", days=2)
+    login(client, "staff@test.example", "StaffPass123")
+
+    req1 = _submit_request(client, lt["id"], NEXT_WEEK_START, NEXT_WEEK_START)
+
+    login(client, "manager@test.example", "ManagerPass123")
+    client.post(f"/leave/requests/{req1['id']}/approve", json={})
+
+    login(client, "staff@test.example", "StaffPass123")
+    resp = client.post("/leave/requests", json={
+        "leave_type_id": lt["id"],
+        "start_date": NEXT_MONTH_START,
+        "end_date": NEXT_MONTH_START,
+    })
+    assert resp.status_code == 201, resp.text
+
+
+def test_non_annual_unlimited_when_no_max(client: TestClient) -> None:
+    login(client, "manager@test.example", "ManagerPass123")
+    resp = client.post("/leave/types", json={"name": "Unlimited Leave"})
+    assert resp.status_code == 201
+    lt = resp.json()
+
+    login(client, "staff@test.example", "StaffPass123")
+    resp = client.post("/leave/requests", json={
+        "leave_type_id": lt["id"],
+        "start_date": NEXT_WEEK_START,
+        "end_date": NEXT_MONTH_END,
+    })
+    assert resp.status_code == 201, resp.text
+
+
+def test_non_annual_adjust_balance_rejected(client: TestClient) -> None:
+    lt = _create_leave_type(client, name="Sick Leave", days=5)
+    login(client, "staff@test.example", "StaffPass123")
+    resp = client.get("/auth/me")
+    staff_id = resp.json()["id"]
+
+    login(client, "manager@test.example", "ManagerPass123")
+    resp = client.post("/leave/balances/adjust", json={
+        "user_id": staff_id,
+        "leave_type_id": lt["id"],
+        "year": YEAR,
+        "delta_days": 5,
+        "reason": "Should not work",
+    })
+    assert resp.status_code == 400
+    assert "annual leave" in resp.json()["detail"].lower()
+
+
+def test_non_annual_approve_records_usage_only(client: TestClient) -> None:
+    lt = _create_leave_type(client, name="Family Care", days=10)
+    login(client, "staff@test.example", "StaffPass123")
+    resp = client.get("/auth/me")
+    staff_id = resp.json()["id"]
+    req = _submit_request(client, lt["id"], NEXT_WEEK_START, NEXT_WEEK_END)
+
+    login(client, "manager@test.example", "ManagerPass123")
+    client.post(f"/leave/requests/{req['id']}/approve", json={})
+
+    login(client, "staff@test.example", "StaffPass123")
+    balances = _get_balances(client, user_id=staff_id, year=YEAR)
+    sick_balance = next(b for b in balances if b["leave_type_id"] == lt["id"])
+    assert sick_balance["balance_days"] == 0.0
+    assert sick_balance["used_days"] == 3.0

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.kr_labor import annual_leave_entitlement, completed_months_of_service
+from app.core.kr_labor import annual_leave_for_calendar_year, as_of_date_for_balance_year
 from app.core.permissions import can_manage_schedules
 from app.models.enums import AuditAction
 from app.models.leave_balance import LeaveBalance, LeaveBalanceAdjustment
@@ -21,14 +21,20 @@ def _dec(value: float | int | Decimal) -> Decimal:
     return Decimal(str(value))
 
 
+def _get_leave_type(db: Session, leave_type_id: UUID) -> LeaveType | None:
+    return db.query(LeaveType).filter(LeaveType.id == leave_type_id).first()
+
+
 def get_or_create_balance(
     db: Session,
     clinic_id: UUID,
     user_id: UUID,
     leave_type_id: UUID,
     year: int,
+    *,
+    for_usage_only: bool = False,
 ) -> LeaveBalance:
-    lt = db.query(LeaveType).filter(LeaveType.id == leave_type_id).first()
+    lt = _get_leave_type(db, leave_type_id)
 
     balance = (
         db.query(LeaveBalance)
@@ -40,20 +46,34 @@ def get_or_create_balance(
         .first()
     )
 
+    if lt and not lt.tenure_based:
+        if balance is not None:
+            return balance
+        if not for_usage_only:
+            raise LeaveBalanceError("This leave type does not use yearly allocation.")
+        balance = LeaveBalance(
+            clinic_id=clinic_id,
+            user_id=user_id,
+            leave_type_id=leave_type_id,
+            year=year,
+            balance_days=Decimal("0"),
+            used_days=Decimal("0"),
+        )
+        db.add(balance)
+        db.flush()
+        return balance
+
     if lt and lt.tenure_based:
         user = db.query(User).filter(User.id == user_id).first()
         if user and user.hire_date:
             today = date.today()
-            # Use end-of-year for past years, today for the current year,
-            # and start-of-year for future projections.
-            if year < today.year:
-                as_of = date(year + 1, 1, 1)
-            elif year == today.year:
-                as_of = today
-            else:
-                as_of = date(year, 1, 1)
-            months = completed_months_of_service(user.hire_date, as_of)
-            default = _dec(annual_leave_entitlement(months))
+            as_of = as_of_date_for_balance_year(year, today)
+            default = annual_leave_for_calendar_year(
+                user.hire_date,
+                year,
+                as_of,
+                termination_date=user.termination_date,
+            )
         else:
             default = Decimal("0")
 
@@ -65,7 +85,7 @@ def get_or_create_balance(
                 db.flush()
             return balance
     else:
-        default = _dec(lt.default_days_per_year) if lt and lt.default_days_per_year else Decimal("0")
+        default = Decimal("0")
         if balance is not None:
             return balance
 
@@ -90,8 +110,31 @@ def has_sufficient_balance(
     year: int,
     days_requested: int,
 ) -> bool:
+    lt = _get_leave_type(db, leave_type_id)
+    if not lt:
+        return False
+
+    if not lt.tenure_based:
+        return True
+
     balance = get_or_create_balance(db, clinic_id, user_id, leave_type_id, year)
     return (balance.balance_days - balance.used_days) >= _dec(days_requested)
+
+
+def record_usage(
+    db: Session,
+    clinic_id: UUID,
+    user_id: UUID,
+    leave_type_id: UUID,
+    year: int,
+    days: int,
+) -> None:
+    """Track approved leave days for non-allocated leave types (usage ledger only)."""
+    balance = get_or_create_balance(
+        db, clinic_id, user_id, leave_type_id, year, for_usage_only=True
+    )
+    balance.used_days += _dec(days)
+    balance.updated_at = datetime.now(UTC)
 
 
 def deduct_balance(
@@ -102,6 +145,10 @@ def deduct_balance(
     year: int,
     days: int,
 ) -> None:
+    lt = _get_leave_type(db, leave_type_id)
+    if lt and not lt.tenure_based:
+        record_usage(db, clinic_id, user_id, leave_type_id, year, days)
+        return
     balance = get_or_create_balance(db, clinic_id, user_id, leave_type_id, year)
     balance.used_days += _dec(days)
     balance.updated_at = datetime.now(UTC)
@@ -150,6 +197,8 @@ def adjust_balance(
     ).first()
     if not lt:
         raise LeaveBalanceError("Leave type not found.")
+    if not lt.tenure_based:
+        raise LeaveBalanceError("Only annual leave supports balance allocation adjustments.")
 
     balance = get_or_create_balance(db, actor.clinic_id, user_id, leave_type_id, year)
 
@@ -225,4 +274,6 @@ def list_balances(
     if year:
         q = q.filter(LeaveBalance.year == year)
 
-    return q.order_by(LeaveBalance.user_id, LeaveBalance.year, LeaveBalance.leave_type_id).all()
+    return q.order_by(
+        LeaveBalance.user_id, LeaveBalance.year, LeaveBalance.leave_type_id
+    ).all()

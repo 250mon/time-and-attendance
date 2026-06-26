@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { LeavePolicyWarningBadge, LeavePolicyWarningBanner } from "@/components/LeavePolicyWarning";
 import {
   approveLeaveRequest,
   fetchLeaveBalances,
@@ -81,6 +82,8 @@ export default function LeaveRequestsPage() {
     }
   }
 
+  const policyWarningCount = requests.filter((r) => r.exceeds_per_request_max).length;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
@@ -101,6 +104,11 @@ export default function LeaveRequestsPage() {
       </div>
 
       {errorMessage && <p className="text-sm text-rose-600 dark:text-rose-400">{errorMessage}</p>}
+      {policyWarningCount > 0 && (
+        <LeavePolicyWarningBanner
+          warning={`${policyWarningCount} request${policyWarningCount === 1 ? "" : "s"} exceed the configured per-request maximum and need careful review.`}
+        />
+      )}
 
       {/* Review modal */}
       {modal && (
@@ -109,6 +117,13 @@ export default function LeaveRequestsPage() {
             <h2 className="text-base font-semibold text-slate-900 capitalize dark:text-slate-100">
               {modal.action} leave request
             </h2>
+            {requests.find((r) => r.id === modal.id)?.policy_warning && (
+              <div className="mt-3">
+                <LeavePolicyWarningBanner
+                  warning={requests.find((r) => r.id === modal.id)!.policy_warning!}
+                />
+              </div>
+            )}
             <textarea
               value={reviewNote}
               onChange={(e) => setReviewNote(e.target.value)}
@@ -171,7 +186,10 @@ export default function LeaveRequestsPage() {
                 return (
                   <tr key={req.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
                     <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">{staffName}</td>
-                    <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">{typeName}</td>
+                    <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">
+                      {typeName}
+                      <LeavePolicyWarningBadge warning={req.policy_warning} />
+                    </td>
                     <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
                       {fmtDate(req.start_date)}
                       {req.start_date !== req.end_date && <> – {fmtDate(req.end_date)}</>}

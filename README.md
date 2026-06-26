@@ -57,22 +57,23 @@ Two staff accounts are created on first boot for testing leave calculations. The
 | Name         | Email                    | Password     | Hire date  | Annual leave (2026) |
 |--------------|--------------------------|--------------|------------|----------------------|
 | Kim Minji    | `minji@clinic.example`   | `Sample123!` | 2024-06-13 | 15 days (2 years)    |
-| Lee Jaesung  | `jaesung@clinic.example` | `Sample123!` | 2025-06-13 | 11 days (1 year)     |
+| Lee Jaesung  | `jaesung@clinic.example` | `Sample123!` | 2025-06-13 | 8.8 days (proportional 2026 grant) |
 
-These accounts demonstrate tenure-based annual leave under Korean Labor Standards Act Art. 60: sub-1-year workers accrue 1 day per completed month (recalculated live), and workers with 1+ year receive 15 days base.
+These accounts demonstrate fiscal-year annual leave with legal-minimum adjustment (LSA Art. 60): monthly accrual in the hire year, proportional grant on the first January 1, regular grants thereafter, and `legal_adjustment` top-ups when fiscal grants fall below the hire-date legal minimum.
 
 ### Seeded leave types
 
-Six leave types are created automatically based on Korean labor law:
+Seven leave types are created automatically (Korean labor law and clinic defaults):
 
-| Leave type              | Days/year | Allocation          | Approval required |
-|-------------------------|-----------|---------------------|-------------------|
-| Annual Leave (연차휴가)   | —         | Auto from hire date | Yes               |
-| Sick Leave (병가)        | 3         | Fixed               | Yes               |
-| Maternity Leave (출산휴가) | 90       | Fixed               | Yes               |
-| Paternity Leave (배우자 출산휴가) | 10 | Fixed              | Yes               |
-| Family Care Leave (가족돌봄휴가) | 10 | Fixed             | Yes               |
-| Public Holiday (공휴일)   | 0         | Fixed               | No                |
+| Leave type | Max / request | Approval required |
+|------------|---------------|-------------------|
+| Annual Leave (연차휴가) | — (auto from hire date) | Yes |
+| Sick Leave (병가) | No limit | Yes |
+| Menstrual Leave (생리휴가) | 1 | Yes |
+| Maternity Leave (출산전후휴가) | 90 | Yes |
+| Paternity Leave (배우자 출산휴가) | 10 | Yes |
+| Parental Leave (육아휴직) | 365 | Yes |
+| Family Care Leave (가족돌봄휴가) | 10 | Yes |
 
 > **To re-seed from scratch**, drop and recreate the database:
 >
@@ -117,7 +118,7 @@ Navigate to http://localhost:3000. You will be redirected to the login page. Use
 1. **Log in** as Owner/Admin.
 2. Go to **Leave Types** → review the seeded Korean labor law types. Add or adjust any clinic-specific types.
 3. Go to **Staff** → add your clinic's staff members.
-   - During creation, choose which leave types apply to each staff member. Tenure-based annual leave is calculated automatically from the hire date.
+   - Set hire date on staff creation — annual leave is calculated automatically. Other leave types may limit days per request; total usage is recorded when leave is approved.
    - Leave allocations can also be adjusted later from the staff profile page.
 4. Go to **Shifts** → create the shift templates your clinic uses (e.g. "Morning 09:00–18:00").
 5. Go to **Schedules** → assign shifts to staff.
@@ -125,12 +126,26 @@ Navigate to http://localhost:3000. You will be redirected to the login page. Use
 
 ### 5. Leave management
 
-- **Admin/Manager view** (`/leave`): cards showing each staff member's total allocated, used, and remaining days for the current year. Click a card to open a detail modal with a per-leave-type breakdown. The modal shows service-year buttons from the staff member's hire date up to the current year.
-- **Staff view** (`/leave`): personal leave balance cards per leave type. The period selector shows service-year buttons starting from the hire date (e.g. `2024.6.13`, `2025.6.13`) rather than calendar years. Selecting a past period automatically backfills the balance rows for that year if they do not yet exist.
-- **New request form**: the leave type dropdown only shows types assigned to the requesting staff member, with remaining days displayed per type.
-- **Leave requests** (`/leave/requests`): lists all requests with status, staff name, and remaining balance. The table filters to the selected service period. Managers can approve or reject pending requests (they cannot approve their own).
-- **Staff profile** (`/staff/{id}`): shows assigned leave types and current-year balances. Unassigned types can be added with an Add button. The title says "Assigned leave types" — assignment is permanent from the hire date, not year-specific.
-- Annual leave for workers with less than one year of service recalculates automatically as each full month of service completes.
+- **Admin/Manager view** (`/leave`): cards showing each staff member's annual leave allocated, used, and remaining for the current calendar year. Click a card to open the per-staff detail page (`/leave/staff/{id}`).
+- **Staff view** (`/leave`): personal annual leave balance cards and a **Year** selector with calendar-year buttons from the hire year through the next calendar year (e.g. `2025`, `2026`, `2027`). Selecting a past year automatically backfills balance rows if they do not yet exist. Other leave types show days used only (no yearly allocation).
+- **New request form**: lists all active leave types. Annual leave shows remaining days; other types show a per-request maximum when configured. Requests that exceed a non-annual per-request maximum are allowed but flagged with a warning to staff and managers.
+- **Leave requests** (`/leave/requests`): lists requests with status, staff name, remaining annual balance, and policy-warning badges for over-max non-annual requests. Managers can approve or reject pending requests (they cannot approve their own).
+- **Staff profile** (`/staff/{id}`): shows current-year annual leave balance and allows manual balance adjustments. Annual leave is assigned automatically from the hire date; other leave types are usage-only.
+- **Leave types** (`/leave/types`): annual leave (`tenure_based`) is calculated from hire date. Other types use `default_days_per_year` as a **max days per single request** (blank = no limit), not a yearly cap.
+
+#### Annual leave calculation
+
+Annual leave uses a dual-track engine (Korean LSA Art. 60 + fiscal-year bulk grant):
+
+| Track | Basis | Rules |
+|-------|-------|-------|
+| Legal minimum | Hire-date anniversary | 1 day/month in first year (max 11); 15 days at 1-year anniversary; +1 per 2 years after (max 25) |
+| Fiscal policy | Calendar/fiscal year (default Jan 1) | Monthly accrual in hire year; proportional grant on first Jan 1; regular grants thereafter |
+| `legal_adjustment` | Top-up | Applied when fiscal grants fall below legal minimum |
+
+Before the 1-year hire anniversary, each calendar year's displayed balance counts **monthly accrual only** for that year. Fiscal grants and anniversary settlements are included once the anniversary has passed.
+
+Configure via environment variables (see below).
 
 ## Local Development
 
@@ -189,6 +204,17 @@ These only change the **host-side** port mapping; the containers always listen o
 ### Database
 
 `DATABASE_URL` can be set in `.env`/`dev.env` to point at any reachable PostgreSQL instance — a managed database, a different host, a non-default port, etc. When set, it takes precedence over the bundled `postgres` service entirely. Leave it unset (or matching `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`) to use the `postgres` container Docker Compose starts for you.
+
+### Annual leave configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LEAVE_FISCAL_START_MONTH` | `1` | Month the fiscal year starts (1 = January) |
+| `LEAVE_FISCAL_START_DAY` | `1` | Day the fiscal year starts |
+| `LEAVE_FISCAL_ROUNDING` | `round_2` | Rounding for fiscal proration: `none`, `floor`, `ceil`, `half_up`, `round_2` |
+| `LEAVE_ADJUSTMENT_MODE` | `anniversary_top_up` | When to apply legal top-ups: `anniversary_top_up`, `termination_only`, or `none` |
+
+Implementation: `backend/app/core/leave_accrual.py` (engine), `backend/app/core/kr_labor.py` (calendar-year facade).
 
 ## Deploying to a Linux Server
 

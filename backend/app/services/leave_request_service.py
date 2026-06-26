@@ -7,6 +7,7 @@ from app.core.permissions import can_manage_schedules
 from app.models.leave_request import LeaveRequest
 from app.models.enums import AuditAction, LeaveStatus
 from app.models.user import User
+from app.services import leave_type_service as type_svc
 from app.services.leave_type_service import LeaveTypeError, get_leave_type
 from app.services import audit_service, leave_balance_service as balance_svc
 
@@ -54,7 +55,7 @@ def create_leave_request(
 
     total = _total_days(start_date, end_date)
 
-    # Check leave balance (uses start_date year for cross-year requests)
+    # Check leave balance (annual leave only; uses start_date year for cross-year requests)
     if not balance_svc.has_sufficient_balance(
         db, actor.clinic_id, actor.id, leave_type_id, start_date.year, total
     ):
@@ -72,7 +73,61 @@ def create_leave_request(
     db.add(req)
     db.commit()
     db.refresh(req)
+
+    warning = per_request_max_warning(lt, total)
+    if warning:
+        audit_service.log_action(
+            db,
+            actor.id,
+            actor.clinic_id,
+            AuditAction.LEAVE_SUBMITTED,
+            entity_type="leave_request",
+            entity_id=str(req.id),
+            metadata={
+                "leave_type_id": str(leave_type_id),
+                "total_days": total,
+                "max_days_per_request": lt.default_days_per_year,
+                "policy_warning": warning,
+            },
+        )
+        db.commit()
+
     return req
+
+
+def per_request_max_warning(leave_type, total_days: int) -> str | None:
+    """Return a warning when a non-annual request exceeds the configured per-request maximum."""
+    if leave_type.tenure_based:
+        return None
+    if leave_type.default_days_per_year is None:
+        return None
+    if total_days <= leave_type.default_days_per_year:
+        return None
+    return (
+        f"Requested {total_days} days exceeds the configured maximum of "
+        f"{leave_type.default_days_per_year} days per request."
+    )
+
+
+def build_leave_request_response(db: Session, req: LeaveRequest) -> "LeaveRequestResponse":
+    from app.schemas.leave import LeaveRequestResponse
+
+    lt = type_svc.get_leave_type_or_none(db, req.clinic_id, req.leave_type_id)
+    return LeaveRequestResponse.from_request(req, lt)
+
+
+def build_leave_request_responses(db: Session, reqs: list[LeaveRequest]) -> list["LeaveRequestResponse"]:
+    from app.models.leave_type import LeaveType
+    from app.schemas.leave import LeaveRequestResponse
+
+    if not reqs:
+        return []
+    type_ids = {r.leave_type_id for r in reqs}
+    types = {
+        row.id: row
+        for row in db.query(LeaveType).filter(LeaveType.id.in_(type_ids)).all()
+    }
+    return [LeaveRequestResponse.from_request(r, types.get(r.leave_type_id)) for r in reqs]
 
 
 def list_leave_requests(

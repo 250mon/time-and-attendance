@@ -2,16 +2,13 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 
 import { useAuth } from "@/components/AuthProvider";
-import { adjustLeaveBalance, createStaffMember, fetchLeaveTypes, getApiErrorMessage } from "@/lib/api-client";
+import { createStaffMember, getApiErrorMessage } from "@/lib/api-client";
 import { staffCreateSchema, type StaffCreateFormValues } from "@/lib/validation";
-import type { LeaveType } from "@/types";
-
-const CURRENT_YEAR = new Date().getFullYear();
 
 const inputCls =
   "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
@@ -21,18 +18,6 @@ export default function NewStaffPage() {
   const router = useRouter();
   const { canManageStaff, user } = useAuth();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
-  const [selectedLeaveTypes, setSelectedLeaveTypes] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    fetchLeaveTypes()
-      .then((types) => {
-        const active = types.filter((t) => t.active);
-        setLeaveTypes(active);
-        setSelectedLeaveTypes(new Set(active.map((t) => t.id)));
-      })
-      .catch(() => {});
-  }, []);
 
   const {
     register,
@@ -52,18 +37,7 @@ export default function NewStaffPage() {
   });
 
   if (!canManageStaff) {
-    return (
-      <p className="text-sm text-rose-600 dark:text-rose-400">You do not have permission to add staff.</p>
-    );
-  }
-
-  function toggleLeaveType(id: string) {
-    setSelectedLeaveTypes((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    return <p className="text-sm text-rose-600 dark:text-rose-400">You do not have permission to add staff.</p>;
   }
 
   return (
@@ -89,21 +63,6 @@ export default function NewStaffPage() {
               employment_type: values.employment_type,
               hire_date: values.hire_date || null,
             });
-
-            // Initialize leave balances for each selected type.
-            // delta_days=0 triggers get_or_create_balance without changing the allocation.
-            await Promise.allSettled(
-              [...selectedLeaveTypes].map((leave_type_id) =>
-                adjustLeaveBalance({
-                  user_id: created.id,
-                  leave_type_id,
-                  year: CURRENT_YEAR,
-                  delta_days: 0,
-                  reason: "Initial allocation on staff creation",
-                })
-              )
-            );
-
             router.push(`/staff/${created.id}`);
           } catch (error) {
             setErrorMessage(getApiErrorMessage(error, "Unable to create staff member"));
@@ -167,44 +126,12 @@ export default function NewStaffPage() {
           <div>
             <label className={labelCls}>Hire date</label>
             <input type="date" className={inputCls} {...register("hire_date")} />
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Annual leave is calculated automatically from the hire date. Other leave types are
+              recorded when used — no yearly allocation is required.
+            </p>
           </div>
         </div>
-
-        {leaveTypes.length > 0 && (
-          <div className="space-y-3 border-t border-slate-200 pt-5 dark:border-slate-700">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Leave allocation for {CURRENT_YEAR}</h2>
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                Select which leave types to assign. Deselected types can be added later from the staff profile.
-              </p>
-            </div>
-            <div className="space-y-2">
-              {leaveTypes.map((lt) => (
-                <label
-                  key={lt.id}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedLeaveTypes.has(lt.id)}
-                    onChange={() => toggleLeaveType(lt.id)}
-                    className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                  />
-                  <span className="flex-1 text-sm text-slate-800 dark:text-slate-100">{lt.name}</span>
-                  {lt.tenure_based ? (
-                    <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700 dark:bg-teal-900/40 dark:text-teal-400">
-                      Auto from hire date
-                    </span>
-                  ) : (
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      {lt.default_days_per_year ?? 0} days/year
-                    </span>
-                  )}
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
 
         {errorMessage ? (
           <p className="text-sm text-rose-600 dark:text-rose-400">{errorMessage}</p>
@@ -215,7 +142,7 @@ export default function NewStaffPage() {
           disabled={isSubmitting}
           className="rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-60 dark:bg-teal-600 dark:hover:bg-teal-700"
         >
-          {isSubmitting ? "Creating..." : "Create staff member"}
+          {isSubmitting ? "Creating…" : "Create staff member"}
         </button>
       </form>
     </div>

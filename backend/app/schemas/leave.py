@@ -22,14 +22,24 @@ class LeaveTypeResponse(BaseModel):
 
 class LeaveTypeCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    default_days_per_year: int | None = Field(None, ge=1, le=365)
+    default_days_per_year: int | None = Field(
+        None,
+        ge=1,
+        le=365,
+        description="Annual leave: unused. Other types: max days per single request (blank = no limit).",
+    )
     requires_approval: bool = True
     tenure_based: bool = False
 
 
 class LeaveTypeUpdateRequest(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=100)
-    default_days_per_year: int | None = Field(None, ge=1, le=365)
+    default_days_per_year: int | None = Field(
+        None,
+        ge=1,
+        le=365,
+        description="Annual leave: unused. Other types: max days per single request (blank = no limit).",
+    )
     requires_approval: bool | None = None
     tenure_based: bool | None = None
     active: bool | None = None
@@ -69,3 +79,28 @@ class LeaveRequestResponse(BaseModel):
     reviewed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    exceeds_per_request_max: bool = False
+    max_days_per_request: int | None = None
+    policy_warning: str | None = None
+
+    @classmethod
+    def from_request(cls, req: object, leave_type: object | None) -> "LeaveRequestResponse":
+        from app.services.leave_request_service import per_request_max_warning
+
+        exceeded = False
+        max_days: int | None = None
+        warning: str | None = None
+
+        if leave_type is not None:
+            warning = per_request_max_warning(leave_type, req.total_days)  # type: ignore[attr-defined]
+            exceeded = warning is not None
+            if not leave_type.tenure_based:  # type: ignore[attr-defined]
+                max_days = leave_type.default_days_per_year  # type: ignore[attr-defined]
+
+        data = cls.model_validate(req).model_dump()
+        data.update(
+            exceeds_per_request_max=exceeded,
+            max_days_per_request=max_days,
+            policy_warning=warning,
+        )
+        return cls(**data)

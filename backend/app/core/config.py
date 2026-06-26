@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     seed_admin_name: str = "Clinic Admin"
     log_level: str = "INFO"
 
+    # Annual leave accrual (LSA Art. 60 + fiscal-year bulk grant)
+    leave_fiscal_start_month: int = 1
+    leave_fiscal_start_day: int = 1
+    leave_fiscal_rounding: str = "round_2"
+    leave_adjustment_mode: str = "anniversary_top_up"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

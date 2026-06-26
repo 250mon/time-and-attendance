@@ -8,15 +8,13 @@ import { useForm } from "react-hook-form";
 
 import { useAuth } from "@/components/AuthProvider";
 import {
-  adjustLeaveBalance,
   fetchLeaveBalances,
-  fetchLeaveTypes,
   fetchStaffMember,
   getApiErrorMessage,
   updateStaffMember,
 } from "@/lib/api-client";
 import { staffUpdateSchema, type StaffUpdateFormValues } from "@/lib/validation";
-import type { LeaveBalance, LeaveType, User } from "@/types";
+import type { LeaveBalance, User } from "@/types";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -31,9 +29,7 @@ export default function StaffDetailPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [balances, setBalances] = useState<LeaveBalance[]>([]);
-  const [addingTypeId, setAddingTypeId] = useState<string | null>(null);
 
   const {
     register,
@@ -67,12 +63,10 @@ export default function StaffDetailPage() {
   useEffect(() => {
     if (!canManageStaff) return;
     Promise.all([
-      fetchLeaveTypes(),
       fetchLeaveBalances({ user_id: params.id, year: CURRENT_YEAR }),
     ])
-      .then(([types, bals]) => {
-        setLeaveTypes(types.filter((t) => t.active));
-        setBalances(bals.filter((b) => b.year === CURRENT_YEAR));
+      .then(([bals]) => {
+        setBalances((bals as LeaveBalance[]).filter((b) => b.year === CURRENT_YEAR && b.balance_days > 0));
       })
       .catch(() => {});
   }, [params.id, canManageStaff]);
@@ -86,27 +80,6 @@ export default function StaffDetailPage() {
   }
 
   const canEditRole = currentUser?.role === "OWNER";
-
-  const assignedTypeIds = new Set(balances.map((b) => b.leave_type_id));
-  const unassignedTypes = leaveTypes.filter((lt) => !assignedTypeIds.has(lt.id));
-
-  async function handleAddLeaveType(leaveTypeId: string) {
-    setAddingTypeId(leaveTypeId);
-    try {
-      const newBalance = await adjustLeaveBalance({
-        user_id: params.id,
-        leave_type_id: leaveTypeId,
-        year: CURRENT_YEAR,
-        delta_days: 0,
-        reason: "Leave type added from staff profile",
-      });
-      setBalances((prev) => [...prev, newBalance]);
-    } catch {
-      // silently ignore — balance page can be used for manual setup
-    } finally {
-      setAddingTypeId(null);
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -212,74 +185,37 @@ export default function StaffDetailPage() {
         </button>
       </form>
 
-      {canManageStaff && leaveTypes.length > 0 && (
+      {canManageStaff && (
         <div className="max-w-2xl space-y-3 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <div>
             <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-              Assigned leave types
+              Annual leave · {CURRENT_YEAR}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              To adjust allocations or view other years, use the Leave page.
+              Calculated from hire date. Other leave types are tracked on the Leave page when used.
             </p>
           </div>
 
-          {balances.length > 0 && (
+          {balances.length > 0 ? (
             <div className="space-y-1">
-              {balances.map((b) => {
-                const lt = leaveTypes.find((t) => t.id === b.leave_type_id);
-                return (
-                  <div
-                    key={b.id}
-                    className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700"
-                  >
-                    <span className="flex-1 text-sm text-slate-800 dark:text-slate-100">
-                      {lt?.name ?? "Unknown"}
-                    </span>
-                    {lt?.tenure_based ? (
-                      <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700 dark:bg-teal-900/40 dark:text-teal-400">
-                        Auto
-                      </span>
-                    ) : null}
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      {b.remaining_days} / {b.balance_days} days
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {unassignedTypes.length > 0 && (
-            <div className="space-y-2 border-t border-slate-200 pt-3 dark:border-slate-700">
-              <p className="text-xs font-medium text-slate-600 dark:text-slate-400">Not yet assigned</p>
-              {unassignedTypes.map((lt) => (
+              {balances.map((b) => (
                 <div
-                  key={lt.id}
-                  className="flex items-center gap-3 rounded-lg border border-dashed border-slate-300 px-3 py-2 dark:border-slate-600"
+                  key={b.id}
+                  className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5 dark:border-slate-700"
                 >
-                  <span className="flex-1 text-sm text-slate-600 dark:text-slate-400">{lt.name}</span>
-                  {lt.tenure_based ? (
-                    <span className="text-xs text-slate-400 dark:text-slate-500">Auto from hire date</span>
-                  ) : (
-                    <span className="text-xs text-slate-400 dark:text-slate-500">
-                      {lt.default_days_per_year ?? 0} days/year
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    disabled={addingTypeId === lt.id}
-                    onClick={() => handleAddLeaveType(lt.id)}
-                    className="rounded bg-teal-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-teal-800 disabled:opacity-60 dark:bg-teal-600 dark:hover:bg-teal-700"
-                  >
-                    {addingTypeId === lt.id ? "Adding…" : "Add"}
-                  </button>
+                  <span className="flex-1 text-sm text-slate-800 dark:text-slate-100">Annual leave</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    {b.remaining_days} / {b.balance_days} days remaining
+                  </span>
                 </div>
               ))}
             </div>
-          )}
-
-          {balances.length === 0 && unassignedTypes.length === 0 && (
-            <p className="text-sm text-slate-500 dark:text-slate-400">No leave types configured.</p>
+          ) : (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {staffMember.hire_date
+                ? "No annual leave balance for this year yet."
+                : "Set a hire date to enable annual leave calculation."}
+            </p>
           )}
         </div>
       )}

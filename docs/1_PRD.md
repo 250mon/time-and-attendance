@@ -490,6 +490,12 @@ Admins shall be able to:
 - Opening balances and historical imports are auditable.
 - Imported leave records are distinguishable from normal staff-submitted leave requests.
 
+### Implemented leave behavior (current MVP)
+
+- **Annual leave** is allocated automatically from hire date using a dual-track accrual engine (legal minimum + fiscal-year bulk grant + legal adjustment). Balances are tracked per calendar year.
+- **Other leave types** track approved usage only; configured max applies per single request. Exceeding the per-request max warns staff and managers but does not block submission.
+- Managers review pending requests with remaining annual balance and policy-warning badges visible.
+
 ------
 
 ## 6.9 Minimum Staffing Warning

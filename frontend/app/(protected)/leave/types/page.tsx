@@ -101,7 +101,8 @@ export default function LeaveTypesPage() {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Leave Types</h1>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Define the categories of leave staff can request.
+            Define leave categories. Annual leave is calculated from hire date; other types may
+            limit how many days can be requested at once.
           </p>
         </div>
         {!showForm && (
@@ -136,15 +137,21 @@ export default function LeaveTypesPage() {
           </div>
 
           <div>
-            <label className={labelCls}>Default days per year</label>
+            <label className={labelCls}>Max days per request</label>
             <input
               type="number"
-              min={0}
+              min={1}
+              disabled={form.tenure_based}
               value={form.default_days_per_year}
               onChange={(e) => setForm((f) => ({ ...f, default_days_per_year: e.target.value }))}
-              placeholder="Leave blank for unlimited"
+              placeholder={form.tenure_based ? "Not used for annual leave" : "Leave blank for no limit"}
               className={inputCls}
             />
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {form.tenure_based
+                ? "Annual entitlement is computed from hire date, not this field."
+                : "Maximum duration of a single leave request. Usage is tracked without a yearly pool."}
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -165,7 +172,13 @@ export default function LeaveTypesPage() {
               id="tenure-based"
               type="checkbox"
               checked={form.tenure_based}
-              onChange={(e) => setForm((f) => ({ ...f, tenure_based: e.target.checked }))}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  tenure_based: e.target.checked,
+                  default_days_per_year: e.target.checked ? "" : f.default_days_per_year,
+                }))
+              }
               className="h-4 w-4 rounded border-slate-300 text-teal-700 dark:border-slate-600"
             />
             <label htmlFor="tenure-based" className="text-sm text-slate-700 dark:text-slate-300">
@@ -202,8 +215,8 @@ export default function LeaveTypesPage() {
           <thead className="bg-slate-50 dark:bg-slate-800">
             <tr>
               <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Name</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Days / year</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Allocation</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Max / request</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Tracking</th>
               <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Approval</th>
               <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Status</th>
               <th className="px-4 py-3 text-right font-medium text-slate-600 dark:text-slate-400">Actions</th>
@@ -227,14 +240,22 @@ export default function LeaveTypesPage() {
                 <tr key={lt.id} className={lt.active ? "" : "opacity-50"}>
                   <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">{lt.name}</td>
                   <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
-                    {lt.tenure_based ? "—" : (lt.default_days_per_year != null ? lt.default_days_per_year : "—")}
+                    {lt.tenure_based
+                      ? "—"
+                      : lt.default_days_per_year != null
+                        ? lt.default_days_per_year
+                        : "No limit"}
                   </td>
                   <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
                     {lt.tenure_based ? (
                       <span className="inline-flex items-center rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-700 dark:bg-teal-900 dark:text-teal-300">
-                        Tenure-based
+                        Annual allocation
                       </span>
-                    ) : "Fixed"}
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                        Usage only
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
                     {lt.requires_approval ? "Required" : "Not required"}

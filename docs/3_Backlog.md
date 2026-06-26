@@ -67,9 +67,9 @@ This backlog translates the PRD and development guide into implementation-ready 
 
 | ID | Priority | Status | Item | Acceptance Notes |
 | --- | --- | --- | --- | --- |
-| CT-601 | P0 | Blocked | Configure leave types | Support annual, half-day, hourly, sick, unpaid, and special leave. |
-| CT-602 | P0 | Blocked | Submit leave requests | Staff can select type, date/time range, reason, and view status. |
-| CT-603 | P0 | Blocked | Approve or reject leave | Managers see pending requests, balance, and staffing warnings. |
+| CT-601 | P0 | Done | Configure leave types | Annual (`tenure_based`) and non-annual types with per-request max. |
+| CT-602 | P0 | Done | Submit leave requests | Staff select type, date range, reason; over-max non-annual warns instead of blocking. |
+| CT-603 | P0 | Done | Approve or reject leave | Managers see pending requests, balance, and policy warnings. |
 | CT-604 | P1 | Blocked | Show team leave calendar | Approved leave appears in schedule and attendance views. |
 | CT-605 | P0 | Blocked | Add historical leave entry | Admin can manually add past approved leave for existing employees during initial setup. |
 | CT-606 | P0 | Blocked | Import historical leave CSV | Admin can upload CSV, preview row-level validation errors, and commit valid historical leave records. |
@@ -78,9 +78,9 @@ This backlog translates the PRD and development guide into implementation-ready 
 
 | ID | Priority | Status | Item | Acceptance Notes |
 | --- | --- | --- | --- | --- |
-| CT-701 | P0 | Blocked | Track annual leave balance | Store accrued, used, pending, adjusted, and remaining days by year. |
-| CT-702 | P0 | Blocked | Deduct approved leave | Rejected leave does not deduct balance; pending leave is shown separately. |
-| CT-703 | P1 | Blocked | Add manual balance adjustments | Admin adjustment requires reason and audit entry. |
+| CT-701 | P0 | Done | Track annual leave balance | Calendar-year balances from dual-track accrual engine; usage-only for non-annual types. |
+| CT-702 | P0 | Done | Deduct approved leave | Annual leave deducts balance; non-annual records usage; rejected leave does not deduct. |
+| CT-703 | P1 | Done | Add manual balance adjustments | Admin adjustment requires reason and audit entry (annual leave only). |
 | CT-704 | P0 | Blocked | Set opening leave balances | Admin can set initial balances for existing employees and audit each change. |
 
 ## Phase 8: Reports and Exports

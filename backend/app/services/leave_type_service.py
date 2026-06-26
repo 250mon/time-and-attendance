@@ -28,6 +28,13 @@ def get_leave_type(db: Session, clinic_id: UUID, leave_type_id: UUID) -> LeaveTy
     return lt
 
 
+def get_leave_type_or_none(db: Session, clinic_id: UUID, leave_type_id: UUID) -> LeaveType | None:
+    return db.query(LeaveType).filter(
+        LeaveType.id == leave_type_id,
+        LeaveType.clinic_id == clinic_id,
+    ).first()
+
+
 def create_leave_type(
     db: Session,
     actor: User,

@@ -229,6 +229,21 @@ Exit criteria:
 
 Backlog: `CT-601` through `CT-606`.
 
+**Implemented:**
+
+- `leave_types` and `leave_requests` models and CRUD APIs
+- Leave type management UI (`/leave/types`) with annual vs usage-only semantics
+- Staff leave request submission, cancellation, manager approve/reject
+- Policy warnings for non-annual requests exceeding per-request maximum
+- Leave review UI (`/leave/requests`) with balance display and warning badges
+- Calendar-year leave overview (`/leave`) and per-staff detail (`/leave/staff/{id}`)
+
+**Not yet implemented:**
+
+- Minimum staffing warning before approval
+- Team leave calendar
+- Historical leave entry and CSV import
+
 Database work:
 
 - Create `leave_types` and `leave_requests`.
@@ -280,6 +295,22 @@ Exit criteria:
 ## 10. Phase 7: Leave Balance Engine
 
 Backlog: `CT-701` through `CT-704`.
+
+**Implemented:**
+
+- `leave_balances` and `leave_balance_adjustments` models
+- Dual-track annual leave accrual engine (`leave_accrual.py`, `kr_labor.py`)
+- Auto-assignment of annual leave on staff onboarding from hire date
+- Calendar-year balance UI with year selector (`leave-years.ts`)
+- Approved annual leave deducts balance; non-annual types record usage only
+- Admin balance adjustment with required reason and audit log
+- Over-max non-annual requests allowed with `policy_warning` flags
+
+**Not yet implemented:**
+
+- Opening balance workflow for existing employees
+- Historical leave CSV import
+- Pending leave shown separately from used leave in balance rows
 
 Database work:
 

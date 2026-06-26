@@ -16,16 +16,22 @@ When implementation begins, follow the planned structure from the development gu
 
 ## Build, Test, and Development Commands
 
-There is no runnable application scaffold yet. For documentation-only changes, validate Markdown manually.
+```bash
+# Full local stack
+cp dev.env.example dev.env
+docker compose -f docker-compose.dev.yml --env-file dev.env up --build
 
-Planned commands after scaffolding:
+# Backend
+cd backend && pytest
+cd backend && ruff check .
+cd backend && mypy app
 
-- `cd backend && pytest` runs backend tests.
-- `cd backend && ruff check .` checks Python style.
-- `cd backend && mypy app` runs Python type checks.
-- `cd frontend && npm run dev` starts the Next.js app locally.
-- `cd frontend && npm test` runs frontend tests once available.
-- `docker compose -f docker-compose.dev.yml --env-file dev.env up --build` starts frontend, backend, and PostgreSQL services for local dev (`docker compose up --build` runs the production stack instead).
+# Frontend
+cd frontend && npm run dev
+cd frontend && npm test
+```
+
+See `README.md` and `CLAUDE.md` for full command reference.
 
 ## Coding Style & Naming Conventions
 

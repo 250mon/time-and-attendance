@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { LeavePolicyWarningBadge } from "@/components/LeavePolicyWarning";
 import {
   adjustLeaveBalance,
   fetchLeaveBalances,
@@ -12,6 +13,7 @@ import {
   fetchStaffMember,
   getApiErrorMessage,
 } from "@/lib/api-client";
+import { calendarYearsFromHire, isDateInCalendarYear } from "@/lib/leave-years";
 import type { LeaveBalance, LeaveRequest, LeaveStatus, LeaveType, User } from "@/types";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -75,9 +77,12 @@ export default function StaffLeaveDetailPage() {
       .then(async (bal) => {
         if (bal.length === 0 && year < CURRENT_YEAR) {
           const current = await fetchLeaveBalances({ year: CURRENT_YEAR, user_id: id });
-          if (current.length > 0) {
+          const annualCurrent = current.filter((b) =>
+            leaveTypes.some((t) => t.id === b.leave_type_id && t.tenure_based)
+          );
+          if (annualCurrent.length > 0) {
             await Promise.allSettled(
-              current.map((b) =>
+              annualCurrent.map((b) =>
                 adjustLeaveBalance({
                   user_id: id,
                   leave_type_id: b.leave_type_id,
@@ -97,30 +102,9 @@ export default function StaffLeaveDetailPage() {
       .finally(() => setBalancesLoading(false));
   }, [year]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const hireDate = staffMember?.hire_date
-    ? new Date(staffMember.hire_date + "T00:00:00")
-    : null;
-  const hireYear = hireDate?.getFullYear() ?? CURRENT_YEAR;
+  const calendarYears = calendarYearsFromHire(staffMember?.hire_date, CURRENT_YEAR + 1);
 
-  const serviceYears: { year: number; label: string }[] = [];
-  for (let y = hireYear; y <= CURRENT_YEAR; y++) {
-    const label = hireDate
-      ? `${y}.${hireDate.getMonth() + 1}.${hireDate.getDate()}`
-      : String(y);
-    serviceYears.push({ year: y, label });
-  }
-
-  // Filter requests to the selected service year period.
-  const periodStart = hireDate
-    ? new Date(year, hireDate.getMonth(), hireDate.getDate())
-    : new Date(year, 0, 1);
-  const periodEnd = hireDate
-    ? new Date(year + 1, hireDate.getMonth(), hireDate.getDate())
-    : new Date(year + 1, 0, 1);
-  const periodRequests = requests.filter((r) => {
-    const d = new Date(r.start_date + "T00:00:00");
-    return d >= periodStart && d < periodEnd;
-  });
+  const periodRequests = requests.filter((r) => isDateInCalendarYear(r.start_date, year));
 
   if (loading) {
     return <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>;
@@ -130,9 +114,16 @@ export default function StaffLeaveDetailPage() {
     return <p className="text-sm text-rose-600 dark:text-rose-400">{errorMessage ?? "Staff member not found."}</p>;
   }
 
-  const totalAllocated = balances.reduce((s, b) => s + Number(b.balance_days), 0);
-  const totalUsed = balances.reduce((s, b) => s + Number(b.used_days), 0);
-  const totalRemaining = balances.reduce((s, b) => s + Number(b.remaining_days), 0);
+  const annualBalances = balances.filter((b) =>
+    leaveTypes.some((t) => t.id === b.leave_type_id && t.tenure_based)
+  );
+  const usageOnlyBalances = balances.filter((b) =>
+    leaveTypes.some((t) => t.id === b.leave_type_id && !t.tenure_based)
+  );
+
+  const totalAllocated = annualBalances.reduce((s, b) => s + Number(b.balance_days), 0);
+  const totalUsed = annualBalances.reduce((s, b) => s + Number(b.used_days), 0);
+  const totalRemaining = annualBalances.reduce((s, b) => s + Number(b.remaining_days), 0);
 
   return (
     <div className="space-y-6">
@@ -156,7 +147,7 @@ export default function StaffLeaveDetailPage() {
           </div>
 
           {/* Summary totals for selected year */}
-          {balances.length > 0 && (
+          {annualBalances.length > 0 && (
             <div className="flex gap-6 rounded-xl border border-slate-200 bg-white px-6 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
               {[
                 { label: "Allocated", value: totalAllocated },
@@ -179,11 +170,11 @@ export default function StaffLeaveDetailPage() {
         <p className="text-sm text-rose-600 dark:text-rose-400">{errorMessage}</p>
       )}
 
-      {/* Service year selector */}
+      {/* Calendar year selector */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Period</span>
+        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Year</span>
         <div className="flex flex-wrap gap-1">
-          {serviceYears.map(({ year: y, label }) => (
+          {calendarYears.map((y) => (
             <button
               key={y}
               type="button"
@@ -194,22 +185,22 @@ export default function StaffLeaveDetailPage() {
                   : "border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-800"
               }`}
             >
-              {label}
+              {y}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Per-leave-type balance table */}
+      {/* Annual leave balances */}
       <div>
         <h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">
-          Leave Balances · {year}
+          Annual leave · {year}
         </h2>
         {balancesLoading ? (
           <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
-        ) : balances.length === 0 ? (
+        ) : annualBalances.length === 0 ? (
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            No leave balances recorded for {year}.
+            No annual leave balance for {year}.
           </p>
         ) : (
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -224,7 +215,7 @@ export default function StaffLeaveDetailPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {balances.map((b) => {
+                {annualBalances.map((b) => {
                   const typeName = leaveTypes.find((t) => t.id === b.leave_type_id)?.name ?? "—";
                   const pct = b.balance_days > 0 ? (b.used_days / b.balance_days) * 100 : 0;
                   const low = b.remaining_days <= 3 && b.balance_days > 0;
@@ -273,6 +264,35 @@ export default function StaffLeaveDetailPage() {
         )}
       </div>
 
+      {usageOnlyBalances.length > 0 && (
+        <div>
+          <h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">
+            Other leave used · {year}
+          </h2>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-800">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Leave type</th>
+                  <th className="px-4 py-3 text-right font-medium text-slate-600 dark:text-slate-400">Days used</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {usageOnlyBalances.map((b) => {
+                  const typeName = leaveTypes.find((t) => t.id === b.leave_type_id)?.name ?? "—";
+                  return (
+                    <tr key={b.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
+                      <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">{typeName}</td>
+                      <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{b.used_days}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Leave request history for the period */}
       <div>
         <h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">
@@ -300,7 +320,10 @@ export default function StaffLeaveDetailPage() {
                   const typeName = leaveTypes.find((t) => t.id === req.leave_type_id)?.name ?? "—";
                   return (
                     <tr key={req.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
-                      <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">{typeName}</td>
+                      <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">
+                        {typeName}
+                        <LeavePolicyWarningBadge warning={req.policy_warning} />
+                      </td>
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
                         {fmtDate(req.start_date)}
                         {req.start_date !== req.end_date && <> – {fmtDate(req.end_date)}</>}

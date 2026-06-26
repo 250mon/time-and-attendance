@@ -945,7 +945,8 @@ Leave type exists and is active
 Start date is before end date
 Requested dates are not locked
 No duplicate overlapping leave request
-Annual leave balance is sufficient, unless override is allowed
+Annual leave balance is sufficient (tenure_based types only)
+Non-annual per-request maximum exceeded: allow submission, return policy_warning
 ```
 
 ## 9.4 Approval Logic
@@ -1041,28 +1042,60 @@ created_at
 updated_at
 ```
 
-## 10.2 Initial MVP Approach
+## 10.2 Implemented Accrual Engine
 
-For MVP, use a hybrid method:
+Annual leave is calculated automatically from hire date using a dual-track engine in `backend/app/core/leave_accrual.py`, exposed to balances via `backend/app/core/kr_labor.py`.
+
+### Legal minimum track (hire-date basis)
 
 ```text
-Admin sets annual leave manually at onboarding.
-System deducts approved leave automatically.
-Admin can adjust leave balance with reason.
+< 1 year:     1 day per completed month after hire (max 11)
+1-year date:  15 days (assumes 80%+ attendance)
+3+ years:     15 + floor((completed_years - 1) / 2), max 25
 ```
 
-This avoids overcomplicating legal leave accrual in the first version.
+### Fiscal policy track (calendar-year bulk grant)
 
-## 10.3 Post-MVP Accrual Engine
-
-Later, implement automatic accrual based on:
+Default fiscal year: January 1 (`LEAVE_FISCAL_START_MONTH` / `LEAVE_FISCAL_START_DAY`).
 
 ```text
-Hire date
-Employment type
-Attendance rate
-Policy year
-Clinic configuration
+Hire year:              monthly accrual (1 day/month, max 11)
+First fiscal Jan 1:     proportional grant for prior partial year
+Subsequent fiscal Jan 1: regular annual grant by completed service years
+```
+
+### Legal adjustment
+
+When fiscal grants fall below the legal minimum, `legal_adjustment` events top up the difference. Mode is configurable:
+
+```text
+anniversary_top_up  — adjust on each legal grant date and as_of (default)
+termination_only    — settle only on termination_date
+none                — no automatic top-up
+```
+
+### Calendar-year balance display
+
+`annual_leave_for_calendar_year()` returns entitlement granted during a calendar year. **Before the 1-year hire anniversary**, only monthly accrual events in that year are counted. After the anniversary, the full dual-track total (including fiscal grants and adjustments) applies.
+
+### Leave type semantics
+
+```text
+tenure_based = true   → annual leave; yearly balance allocation from hire date
+tenure_based = false  → usage-only tracking; default_days_per_year = max per single request
+```
+
+Only annual leave supports balance adjustments. Non-annual requests exceeding the per-request max are allowed but return `policy_warning` on the API response.
+
+## 10.3 Configuration
+
+Environment variables (mirrored in `.env.example` and `dev.env.example`):
+
+```text
+LEAVE_FISCAL_START_MONTH=1
+LEAVE_FISCAL_START_DAY=1
+LEAVE_FISCAL_ROUNDING=round_2
+LEAVE_ADJUSTMENT_MODE=anniversary_top_up
 ```
 
 ## 10.4 Balance Calculation

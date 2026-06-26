@@ -72,10 +72,12 @@ def seed_default_clinic_and_admin(db: Session) -> None:
 
 # Korean Labor Standards Act (근로기준법) and Equal Employment Opportunity Act (남녀고용평등법)
 _KR_DEFAULT_LEAVE_TYPES: list[dict] = [
-    # LSA Art. 60 — entitlement varies by tenure; balance is auto-calculated from hire_date
+    # LSA Art. 60 — fiscal-year bulk grant; balance auto-calculated from hire_date
     {"name": "연차유급휴가 (Annual Leave)", "default_days_per_year": None, "requires_approval": True, "tenure_based": True},
-    # LSA Art. 73 — 1 unpaid day per month; no manager approval required (statutory right)
-    {"name": "생리휴가 (Menstrual Leave)", "default_days_per_year": 12, "requires_approval": False},
+    # Clinic sick leave — usage tracked; max per request configurable
+    {"name": "병가 (Sick Leave)", "default_days_per_year": None, "requires_approval": True},
+    # LSA Art. 73 — 1 unpaid day per month
+    {"name": "생리휴가 (Menstrual Leave)", "default_days_per_year": 1, "requires_approval": True},
     # LSA Art. 74 — 90 days (120 for multiple births) before/after childbirth
     {"name": "출산전후휴가 (Maternity Leave)", "default_days_per_year": 90, "requires_approval": True},
     # LSA Art. 75 — 10 paid days when spouse gives birth
@@ -103,12 +105,12 @@ _SAMPLE_STAFF = [
     {
         "name": "Kim Minji",
         "email": "minji@clinic.example",
-        "hire_date": date(2024, 6, 13),  # 2 years of service as of 2026-06-13
+        "hire_date": date(2024, 6, 13),  # 15 days on 2026-01-01 (2nd fiscal grant)
     },
     {
         "name": "Lee Jaesung",
         "email": "jaesung@clinic.example",
-        "hire_date": date(2025, 6, 13),  # 1 year of service as of 2026-06-13
+        "hire_date": date(2025, 6, 13),  # 8.8 days on 2026-01-01 (proportional 1st grant)
     },
 ]
 

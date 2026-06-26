@@ -1,72 +1,83 @@
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
-from app.core.kr_labor import annual_leave_entitlement, completed_months_of_service
-
-
-@pytest.mark.parametrize("months,expected", [
-    # < 1 year: 1 day per completed month
-    (0, 0),
-    (1, 1),
-    (6, 6),
-    (11, 11),
-    # 1st year: 15 days
-    (12, 15),
-    # 2nd year: still 15 (extra days start at year 3)
-    (23, 15),
-    (24, 15),
-    (35, 15),
-    # 3rd year: 16
-    (36, 16),
-    (47, 16),
-    # 4th year: 16
-    (48, 16),
-    # 5th year: 17
-    (60, 17),
-    # 21st year: 25 (cap) — 252 months
-    (252, 25),
-    # beyond cap stays at 25
-    (360, 25),
-])
-def test_annual_leave_entitlement(months, expected):
-    assert annual_leave_entitlement(months) == expected
+from app.core.kr_labor import (
+    annual_leave_for_calendar_year,
+    as_of_date_for_balance_year,
+    completed_months_of_service,
+)
 
 
 @pytest.mark.parametrize("hire, as_of, expected", [
-    # exact month boundary
     (date(2023, 3, 15), date(2024, 3, 15), 12),
-    # day not yet reached — one month short
     (date(2023, 3, 15), date(2024, 3, 14), 11),
-    # start of year calculation used for balance allocation
-    (date(2020, 6, 1),  date(2026, 1, 1),  67),  # 5y 7m = 67
-    # hired after as_of → 0
-    (date(2027, 1, 1),  date(2026, 1, 1),  0),
-    # same day → 0 completed months
+    (date(2020, 6, 1), date(2026, 1, 1), 67),
+    (date(2027, 1, 1), date(2026, 1, 1), 0),
     (date(2024, 5, 10), date(2024, 5, 10), 0),
 ])
 def test_completed_months_of_service(hire, as_of, expected):
     assert completed_months_of_service(hire, as_of) == expected
 
 
-def test_sub_one_year_accrual_grows_monthly():
-    """
-    A worker hired mid-year accrues 1 day per completed month.
-    Each month anniversary the entitlement increases by 1.
-    """
+def test_hire_year_monthly_accrual_only():
     hire = date(2025, 6, 13)
-    cases = [
-        (date(2025, 6, 13), 0),   # hire day — 0 completed months
-        (date(2025, 7, 12), 0),   # one day before first anniversary
-        (date(2025, 7, 13), 1),   # first month complete
-        (date(2025, 8, 13), 2),
-        (date(2025, 12, 13), 6),  # 6 months
-        (date(2026, 5, 13), 11),  # 11 months — still < 1 year
-        (date(2026, 6, 13), 15),  # 12 months complete — jumps to 15 days (LSA Art. 60 §1)
-    ]
-    for as_of, expected_days in cases:
-        months = completed_months_of_service(hire, as_of)
-        assert annual_leave_entitlement(months) == expected_days, (
-            f"as_of={as_of}: expected {expected_days} days, "
-            f"got {annual_leave_entitlement(months)} (months={months})"
-        )
+    assert annual_leave_for_calendar_year(hire, 2025, date(2025, 7, 13)) == Decimal("1.0")
+    assert annual_leave_for_calendar_year(hire, 2025, date(2025, 12, 31)) == Decimal("6.0")
+
+
+def test_calendar_year_before_hire():
+    assert annual_leave_for_calendar_year(date(2025, 3, 15), 2024) == Decimal("0")
+
+
+def test_june_27_2025_hire_pre_anniversary_uses_monthly_only():
+    """Before 1-year anniversary, calendar-year balance is monthly 월차 only."""
+    hire = date(2025, 6, 27)
+    assert annual_leave_for_calendar_year(hire, 2025, date(2025, 12, 31)) == Decimal("6.0")
+    assert annual_leave_for_calendar_year(hire, 2026, date(2026, 6, 26)) == Decimal("5.0")
+
+
+def test_june_27_2025_hire_post_anniversary_includes_fiscal_and_top_up():
+    """After anniversary, calendar-year balance includes Jan grant and adjustments."""
+    hire = date(2025, 6, 27)
+    total = annual_leave_for_calendar_year(hire, 2026, date(2026, 12, 31))
+    assert total > Decimal("15.0")
+
+
+def test_kim_minji_2025_pre_anniversary_monthly_only():
+    hire = date(2024, 6, 13)
+    assert annual_leave_for_calendar_year(hire, 2025, date(2025, 6, 12)) == Decimal("5.0")
+
+
+def test_kim_minji_2025_includes_anniversary_top_up():
+    """
+    Hired 2024-06-13: 2025 includes Jan proration, monthly, and legal_adjustment
+    at the 1-year anniversary — not fiscal-only 8.8.
+    """
+    hire = date(2024, 6, 13)
+    total = annual_leave_for_calendar_year(hire, 2025, date(2025, 12, 31))
+    assert total > Decimal("8.8")
+    assert total >= Decimal("19.0")
+
+
+def test_kim_minji_2026_regular_fiscal_grant():
+    """Hired 2024-06-13: 2026 Jan 1 regular grant year."""
+    hire = date(2024, 6, 13)
+    total = annual_leave_for_calendar_year(hire, 2026, date(2026, 6, 26))
+    assert total >= Decimal("15.0")
+
+
+def test_as_of_date_for_balance_year():
+    today = date(2026, 6, 26)
+    assert as_of_date_for_balance_year(2025, today) == date(2025, 12, 31)
+    assert as_of_date_for_balance_year(2026, today) == date(2026, 6, 26)
+    assert as_of_date_for_balance_year(2027, today) == date(2027, 1, 1)
+
+
+def test_july_hire_2026_calendar_year_with_top_up():
+    """2025-07-01 hire: 2026 includes proration, late monthly, anniversary + adjustment."""
+    hire = date(2025, 7, 1)
+    total = annual_leave_for_calendar_year(hire, 2026, date(2026, 12, 31))
+    # 26 cumulative at year-end minus 5 monthly days already granted in 2025
+    assert total == Decimal("21.0")
