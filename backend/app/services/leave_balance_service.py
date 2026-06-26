@@ -189,6 +189,25 @@ def adjust_balance(
     return balance
 
 
+def assign_default_balances(db: Session, user: User) -> None:
+    """Create balance rows for tenure-based leave types when a staff member is onboarded."""
+    if user.hire_date is None:
+        return
+    year = date.today().year
+    tenure_types = (
+        db.query(LeaveType)
+        .filter(
+            LeaveType.clinic_id == user.clinic_id,
+            LeaveType.active.is_(True),
+            LeaveType.tenure_based.is_(True),
+        )
+        .all()
+    )
+    for lt in tenure_types:
+        get_or_create_balance(db, user.clinic_id, user.id, lt.id, year)
+    db.commit()
+
+
 def list_balances(
     db: Session,
     actor: User,

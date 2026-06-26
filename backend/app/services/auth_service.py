@@ -13,6 +13,7 @@ from app.models.enums import EmploymentType, UserRole, UserStatus
 from app.models.leave_type import LeaveType
 from app.models.user import User
 from app.schemas.auth import ChangePasswordRequest, LoginRequest
+from app.services.leave_balance_service import assign_default_balances
 
 
 class AuthError(Exception):
@@ -120,7 +121,7 @@ def seed_sample_staff(db: Session) -> None:
         exists = db.query(User).filter(User.email == spec["email"]).first()
         if exists:
             continue
-        db.add(User(
+        user = User(
             clinic_id=clinic.id,
             name=spec["name"],
             email=spec["email"],
@@ -129,5 +130,8 @@ def seed_sample_staff(db: Session) -> None:
             employment_type=EmploymentType.FULL_TIME,
             hire_date=spec["hire_date"],
             status=UserStatus.ACTIVE,
-        ))
-    db.commit()
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        assign_default_balances(db, user)

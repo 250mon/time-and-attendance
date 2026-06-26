@@ -13,6 +13,7 @@ from app.core.security import hash_password
 from app.models.enums import UserRole, UserStatus
 from app.models.user import User
 from app.schemas.user import StaffCreateRequest, StaffUpdateRequest
+from app.services.leave_balance_service import assign_default_balances
 
 
 class StaffError(Exception):
@@ -65,6 +66,7 @@ def create_staff_member(db: Session, actor: User, payload: StaffCreateRequest) -
     db.add(user)
     db.commit()
     db.refresh(user)
+    assign_default_balances(db, user)
     return user
 
 

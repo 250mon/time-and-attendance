@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -68,168 +69,6 @@ function BalanceCard({ balance, leaveTypes, year }: {
   );
 }
 
-// ── Staff detail modal (admin view) ───────────────────────────────────────
-
-function StaffLeaveModal({ staff, leaveTypes, onClose }: {
-  staff: User;
-  leaveTypes: LeaveType[];
-  onClose: () => void;
-}) {
-  const [modalYear, setModalYear] = useState(CURRENT_YEAR);
-  const [balances, setBalances] = useState<LeaveBalance[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const staffHireDate = staff.hire_date ? new Date(staff.hire_date + "T00:00:00") : null;
-  const staffHireYear = staffHireDate?.getFullYear() ?? CURRENT_YEAR;
-  const staffServiceYears: { year: number; label: string }[] = [];
-  for (let y = staffHireYear; y <= CURRENT_YEAR; y++) {
-    const label = staffHireDate
-      ? `${y}.${staffHireDate.getMonth() + 1}.${staffHireDate.getDate()}`
-      : String(y);
-    staffServiceYears.push({ year: y, label });
-  }
-
-  useEffect(() => {
-    setLoading(true);
-    fetchLeaveBalances({ year: modalYear, user_id: staff.id })
-      .then(async (bal) => {
-        if (bal.length === 0 && modalYear < CURRENT_YEAR) {
-          const currentBal = await fetchLeaveBalances({ year: CURRENT_YEAR, user_id: staff.id });
-          if (currentBal.length > 0) {
-            await Promise.allSettled(
-              currentBal.map((b) =>
-                adjustLeaveBalance({
-                  user_id: staff.id,
-                  leave_type_id: b.leave_type_id,
-                  year: modalYear,
-                  delta_days: 0,
-                  reason: "Backfill for past service year",
-                })
-              )
-            );
-            return fetchLeaveBalances({ year: modalYear, user_id: staff.id });
-          }
-        }
-        return bal;
-      })
-      .then(setBalances)
-      .finally(() => setLoading(false));
-  }, [staff.id, modalYear]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60">
-      <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl dark:bg-slate-900">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">{staff.name}</h2>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              Hired {fmtShortDate(staff.hire_date ?? null)} · {staff.role}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Service-year selector */}
-        <div className="mt-3 flex flex-wrap gap-1">
-          {staffServiceYears.map(({ year: y, label }) => (
-            <button
-              key={y}
-              type="button"
-              onClick={() => setModalYear(y)}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition ${
-                modalYear === y
-                  ? "bg-teal-700 text-white dark:bg-teal-600"
-                  : "border border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-800"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* Balance table */}
-        <div className="mt-5">
-          {loading ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
-          ) : balances.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">No leave balances recorded for {modalYear}.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-700">
-                  <th className="pb-2 text-left font-medium text-slate-600 dark:text-slate-400">Leave type</th>
-                  <th className="pb-2 text-right font-medium text-slate-600 dark:text-slate-400">Allocated</th>
-                  <th className="pb-2 text-right font-medium text-slate-600 dark:text-slate-400">Used</th>
-                  <th className="pb-2 text-right font-medium text-slate-600 dark:text-slate-400">Remaining</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {balances.map((b) => {
-                  const typeName = leaveTypes.find((t) => t.id === b.leave_type_id)?.name ?? "—";
-                  const low = b.remaining_days <= 3 && b.balance_days > 0;
-                  const pct = b.balance_days > 0 ? (b.used_days / b.balance_days) * 100 : 0;
-                  return (
-                    <tr key={b.id}>
-                      <td className="py-2.5 pr-4 text-slate-700 dark:text-slate-300">{typeName}</td>
-                      <td className="py-2.5 text-right text-slate-700 dark:text-slate-300">{b.balance_days}</td>
-                      <td className="py-2.5 text-right text-slate-700 dark:text-slate-300">{b.used_days}</td>
-                      <td className="py-2.5 text-right">
-                        <span className={`font-semibold ${low ? "text-rose-600 dark:text-rose-400" : "text-teal-700 dark:text-teal-400"}`}>
-                          {b.remaining_days}
-                        </span>
-                        {b.balance_days > 0 && (
-                          <div className="mt-1 ml-auto h-1 w-16 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                            <div
-                              className={`h-full rounded-full ${pct >= 80 ? "bg-rose-500" : "bg-teal-500"}`}
-                              style={{ width: `${Math.min(100, pct)}%` }}
-                            />
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot className="border-t border-slate-200 dark:border-slate-700">
-                <tr>
-                  <td className="pt-2.5 font-medium text-slate-700 dark:text-slate-300">Total</td>
-                  <td className="pt-2.5 text-right font-medium text-slate-700 dark:text-slate-300">
-                    {balances.reduce((s, b) => s + Number(b.balance_days), 0)}
-                  </td>
-                  <td className="pt-2.5 text-right font-medium text-slate-700 dark:text-slate-300">
-                    {balances.reduce((s, b) => s + Number(b.used_days), 0)}
-                  </td>
-                  <td className="pt-2.5 text-right font-semibold text-teal-700 dark:text-teal-400">
-                    {balances.reduce((s, b) => s + Number(b.remaining_days), 0)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          )}
-        </div>
-
-        <div className="mt-5 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function LeavePage() {
@@ -266,7 +105,6 @@ export default function LeavePage() {
 
   // Admin view
   const [staff, setStaff] = useState<User[]>([]);
-  const [selectedStaff, setSelectedStaff] = useState<User | null>(null);
 
   // Initial load
   useEffect(() => {
@@ -396,15 +234,6 @@ export default function LeavePage() {
 
   return (
     <div className="space-y-6">
-      {/* Modal */}
-      {selectedStaff && (
-        <StaffLeaveModal
-          staff={selectedStaff}
-          leaveTypes={leaveTypes}
-          onClose={() => setSelectedStaff(null)}
-        />
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
@@ -440,10 +269,9 @@ export default function LeavePage() {
             {employeeSummaries.length === 0 ? (
               <p className="col-span-full text-sm text-slate-500 dark:text-slate-400">No staff found.</p>
             ) : employeeSummaries.map(({ user: s, totalAllocated, totalUsed, totalRemaining, count }) => (
-              <button
+              <Link
                 key={s.id}
-                type="button"
-                onClick={() => setSelectedStaff(s)}
+                href={`/leave/staff/${s.id}`}
                 className="rounded-xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-teal-400 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-teal-600"
               >
                 <div className="flex items-start justify-between">
@@ -477,7 +305,7 @@ export default function LeavePage() {
                 ) : (
                   <p className="mt-4 text-xs text-slate-400 dark:text-slate-500">No balances for {CURRENT_YEAR}.</p>
                 )}
-              </button>
+              </Link>
             ))}
           </div>
         </div>
