@@ -51,10 +51,11 @@ function BalanceCard({ balance, leaveTypes, year }: {
   const lt = leaveTypes.find((t) => t.id === balance.leave_type_id);
   const typeName = lt?.name ?? "—";
   const isAnnual = lt?.tenure_based ?? false;
-  const pct = isAnnual && balance.balance_days > 0
-    ? (balance.used_days / balance.balance_days) * 100
+  const effective = balance.balance_days + balance.carryover_days;
+  const pct = isAnnual && effective > 0
+    ? (balance.used_days / effective) * 100
     : 0;
-  const low = isAnnual && balance.remaining_days <= 3 && balance.balance_days > 0;
+  const low = isAnnual && balance.remaining_days <= 3 && effective > 0;
 
   if (!isAnnual) {
     return (
@@ -74,10 +75,20 @@ function BalanceCard({ balance, leaveTypes, year }: {
       <p className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">{typeName}</p>
       <p className={`mt-1 text-2xl font-bold ${low ? "text-rose-600 dark:text-rose-400" : "text-teal-700 dark:text-teal-400"}`}>
         {balance.remaining_days}
-        <span className="ml-1 text-sm font-normal text-slate-500 dark:text-slate-400">/ {balance.balance_days} days</span>
+        <span className="ml-1 text-sm font-normal text-slate-500 dark:text-slate-400">
+          / {effective} days
+        </span>
       </p>
-      <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">Used {balance.used_days} · {year}</p>
-      {balance.balance_days > 0 && (
+      <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
+        Used {balance.used_days}
+        {balance.carryover_days > 0 && (
+          <span className="ml-1 text-indigo-500 dark:text-indigo-400">
+            · +{balance.carryover_days} carried over
+          </span>
+        )}
+        {" · "}{year}
+      </p>
+      {effective > 0 && (
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
           <div
             className={`h-full rounded-full ${pct >= 80 ? "bg-rose-500" : "bg-teal-500"}`}
@@ -95,7 +106,7 @@ export default function LeavePage() {
   const { user, canManageStaff } = useAuth();
   const isAdmin = canManageStaff;
 
-  const calendarYears = calendarYearsFromHire(user?.hire_date, CURRENT_YEAR + 1);
+  const calendarYears = calendarYearsFromHire(user?.hire_date, CURRENT_YEAR);
 
   // Shared data
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);

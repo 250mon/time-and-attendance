@@ -7,7 +7,7 @@ from app.models.leave_type import LeaveType
 # Korean Labor Standards Act (근로기준법) and Equal Employment Opportunity Act (남녀고용평등법)
 _KR_DEFAULT_LEAVE_TYPES: list[dict] = [
     # LSA Art. 60 — fiscal-year bulk grant; balance auto-calculated from hire_date
-    {"name": "연차유급휴가 (Annual Leave)", "default_days_per_year": None, "requires_approval": True, "tenure_based": True},
+    {"name": "연차유급휴가 (Annual Leave)", "default_days_per_year": None, "requires_approval": True, "tenure_based": True, "allow_carryover": True},
     # Clinic sick leave — usage tracked; max per request configurable
     {"name": "병가 (Sick Leave)", "default_days_per_year": None, "requires_approval": True},
     # LSA Art. 73 — 1 unpaid day per month

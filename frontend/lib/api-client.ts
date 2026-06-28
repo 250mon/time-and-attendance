@@ -3,6 +3,7 @@ import axios from "axios";
 import type {
   AdjustBalanceInput,
   AuditLog,
+  LeaveBalanceAdjustment,
   AttendanceCorrectionRequest,
   AttendanceDay,
   AttendancePunch,
@@ -252,6 +253,11 @@ export async function fetchLeaveBalances(params?: {
 
 export async function adjustLeaveBalance(payload: AdjustBalanceInput): Promise<LeaveBalance> {
   const response = await apiClient.post<LeaveBalance>("/leave/balances/adjust", payload);
+  return response.data;
+}
+
+export async function fetchLeaveAdjustments(balanceId: string): Promise<LeaveBalanceAdjustment[]> {
+  const response = await apiClient.get<LeaveBalanceAdjustment[]>(`/leave/balances/${balanceId}/adjustments`);
   return response.data;
 }
 

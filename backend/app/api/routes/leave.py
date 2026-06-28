@@ -16,7 +16,12 @@ from app.schemas.leave import (
     LeaveTypeUpdateRequest,
     ReviewLeaveRequest,
 )
-from app.schemas.leave_balance import AdjustBalanceRequest, LeaveBalanceResponse
+from app.schemas.leave_balance import (
+    AdjustBalanceRequest,
+    CarryForwardRequest,
+    LeaveBalanceAdjustmentResponse,
+    LeaveBalanceResponse,
+)
 from app.services import leave_balance_service as balance_svc
 from app.services import leave_request_service as req_svc
 from app.services import leave_type_service as type_svc
@@ -66,6 +71,8 @@ def create_leave_type(
             default_days_per_year=payload.default_days_per_year,
             requires_approval=payload.requires_approval,
             tenure_based=payload.tenure_based,
+            allow_carryover=payload.allow_carryover,
+            carryover_max_days=payload.carryover_max_days,
         )
     except type_svc.LeaveTypeError as exc:
         raise _handle_type(exc) from exc
@@ -208,6 +215,37 @@ def list_leave_balances(
     uid = UUID(user_id) if user_id else None
     balances = balance_svc.list_balances(db, current_user, user_id=uid, year=year)
     return [LeaveBalanceResponse.from_orm_with_remaining(b) for b in balances]
+
+
+@router.post("/balances/carry-forward", status_code=status.HTTP_200_OK)
+def carry_forward_balances(
+    payload: CarryForwardRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    """Carry unused days from payload.year into payload.year+1 for all staff.
+
+    Only leave types with allow_carryover=True are processed.
+    Safe to re-run before any next-year leave is consumed.
+    """
+    try:
+        count = balance_svc.carry_forward_year(db, current_user, payload.year)
+    except balance_svc.LeaveBalanceError as exc:
+        raise _handle_balance(exc) from exc
+    return {"from_year": payload.year, "to_year": payload.year + 1, "rows_updated": count}
+
+
+@router.get("/balances/{balance_id}/adjustments", response_model=list[LeaveBalanceAdjustmentResponse])
+def list_balance_adjustments(
+    balance_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> list[LeaveBalanceAdjustmentResponse]:
+    try:
+        adjs = balance_svc.list_adjustments(db, current_user, balance_id)
+    except balance_svc.LeaveBalanceError as exc:
+        raise _handle_balance(exc) from exc
+    return [LeaveBalanceAdjustmentResponse.from_orm(a) for a in adjs]
 
 
 @router.post("/balances/adjust", response_model=LeaveBalanceResponse)

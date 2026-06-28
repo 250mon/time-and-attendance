@@ -17,7 +17,7 @@ const inputCls =
   "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
 const labelCls = "block text-sm font-medium text-slate-700 dark:text-slate-300";
 
-const EMPTY_FORM = { name: "", default_days_per_year: "", requires_approval: true, tenure_based: false };
+const EMPTY_FORM = { name: "", default_days_per_year: "", requires_approval: true, tenure_based: false, allow_carryover: false, carryover_max_days: "" };
 
 export default function LeaveTypesPage() {
   const { canManageStaff } = useAuth();
@@ -57,6 +57,8 @@ export default function LeaveTypesPage() {
       default_days_per_year: lt.default_days_per_year != null ? String(lt.default_days_per_year) : "",
       requires_approval: lt.requires_approval,
       tenure_based: lt.tenure_based,
+      allow_carryover: lt.allow_carryover,
+      carryover_max_days: lt.carryover_max_days != null ? String(lt.carryover_max_days) : "",
     });
     setEditingId(lt.id);
     setShowForm(true);
@@ -70,6 +72,8 @@ export default function LeaveTypesPage() {
       default_days_per_year: form.default_days_per_year !== "" ? Number(form.default_days_per_year) : null,
       requires_approval: form.requires_approval,
       tenure_based: form.tenure_based,
+      allow_carryover: form.allow_carryover,
+      carryover_max_days: form.carryover_max_days !== "" ? Number(form.carryover_max_days) : null,
     };
     try {
       if (editingId) {
@@ -186,6 +190,39 @@ export default function LeaveTypesPage() {
             </label>
           </div>
 
+          <div className="border-t border-slate-100 pt-3 dark:border-slate-800">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Carryover</p>
+            <div className="flex items-center gap-2 mb-3">
+              <input
+                id="allow-carryover"
+                type="checkbox"
+                checked={form.allow_carryover}
+                onChange={(e) => setForm((f) => ({ ...f, allow_carryover: e.target.checked, carryover_max_days: e.target.checked ? f.carryover_max_days : "" }))}
+                className="h-4 w-4 rounded border-slate-300 text-teal-700 dark:border-slate-600"
+              />
+              <label htmlFor="allow-carryover" className="text-sm text-slate-700 dark:text-slate-300">
+                Allow unused days to carry over into the next year
+              </label>
+            </div>
+            {form.allow_carryover && (
+              <div>
+                <label className={labelCls}>Max carryover days <span className="font-normal text-slate-400">(optional cap)</span></label>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={form.carryover_max_days}
+                  onChange={(e) => setForm((f) => ({ ...f, carryover_max_days: e.target.value }))}
+                  placeholder="Leave blank for no limit"
+                  className={inputCls}
+                />
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Maximum days that can be carried into the following year per staff member.
+                </p>
+              </div>
+            )}
+          </div>
+
           {errorMessage && <p className="text-sm text-rose-600 dark:text-rose-400">{errorMessage}</p>}
 
           <div className="flex gap-2">
@@ -217,6 +254,7 @@ export default function LeaveTypesPage() {
               <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Name</th>
               <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Max / request</th>
               <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Tracking</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Carryover</th>
               <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Approval</th>
               <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Status</th>
               <th className="px-4 py-3 text-right font-medium text-slate-600 dark:text-slate-400">Actions</th>
@@ -225,13 +263,13 @@ export default function LeaveTypesPage() {
           <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
             {loading ? (
               <tr>
-                <td className="px-4 py-6 text-slate-500 dark:text-slate-400" colSpan={6}>
+                <td className="px-4 py-6 text-slate-500 dark:text-slate-400" colSpan={7}>
                   Loading…
                 </td>
               </tr>
             ) : types.length === 0 ? (
               <tr>
-                <td className="px-4 py-6 text-slate-500 dark:text-slate-400" colSpan={6}>
+                <td className="px-4 py-6 text-slate-500 dark:text-slate-400" colSpan={7}>
                   No leave types defined yet.
                 </td>
               </tr>
@@ -255,6 +293,15 @@ export default function LeaveTypesPage() {
                       <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                         Usage only
                       </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
+                    {lt.allow_carryover ? (
+                      <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                        {lt.carryover_max_days != null ? `≤ ${lt.carryover_max_days} d` : "Unlimited"}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-xs">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-slate-700 dark:text-slate-300">

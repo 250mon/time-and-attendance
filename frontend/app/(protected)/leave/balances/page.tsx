@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import {
   adjustLeaveBalance,
+  fetchLeaveAdjustments,
   fetchLeaveBalances,
   fetchLeaveTypes,
   fetchStaff,
   getApiErrorMessage,
 } from "@/lib/api-client";
-import type { LeaveBalance, LeaveType, User } from "@/types";
+import type { LeaveBalance, LeaveBalanceAdjustment, LeaveType, User } from "@/types";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -33,6 +34,11 @@ export default function LeaveBalancesPage() {
   const [form, setForm] = useState({ delta_days: "", reason: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
+
+  // Expanded row → adjustment history
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [adjustments, setAdjustments] = useState<LeaveBalanceAdjustment[]>([]);
+  const [adjLoading, setAdjLoading] = useState(false);
 
   function reload() {
     setLoading(true);
@@ -59,6 +65,20 @@ export default function LeaveBalancesPage() {
     setFormError(null);
   }
 
+  function toggleHistory(balanceId: string) {
+    if (expandedId === balanceId) {
+      setExpandedId(null);
+      setAdjustments([]);
+      return;
+    }
+    setExpandedId(balanceId);
+    setAdjLoading(true);
+    fetchLeaveAdjustments(balanceId)
+      .then(setAdjustments)
+      .catch(() => setAdjustments([]))
+      .finally(() => setAdjLoading(false));
+  }
+
   async function handleAdjust() {
     if (!modal) return;
     const delta = parseFloat(form.delta_days);
@@ -80,6 +100,10 @@ export default function LeaveBalancesPage() {
         delta_days: delta,
         reason: form.reason.trim(),
       });
+      // Refresh history panel for this balance if it was open
+      if (expandedId === modal.balance.id) {
+        fetchLeaveAdjustments(modal.balance.id).then(setAdjustments);
+      }
       setModal(null);
       reload();
     } catch (err) {
@@ -89,14 +113,16 @@ export default function LeaveBalancesPage() {
     }
   }
 
-  const years = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1];
+  const years = [CURRENT_YEAR - 1, CURRENT_YEAR];
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Leave Balances</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">View and adjust staff leave allocations.</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            View and adjust staff leave allocations. Carryover is applied automatically at the start of each year.
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <select
@@ -134,6 +160,11 @@ export default function LeaveBalancesPage() {
             <p className="mt-3 text-sm text-slate-700 dark:text-slate-300">
               Current allocation:{" "}
               <span className="font-medium">{modal.balance.balance_days} days</span>
+              {modal.balance.carryover_days > 0 && (
+                <span className="ml-1 text-indigo-600 dark:text-indigo-400">
+                  +{modal.balance.carryover_days} carried over
+                </span>
+              )}
               {" · "}Used:{" "}
               <span className="font-medium">{modal.balance.used_days} days</span>
             </p>
@@ -158,7 +189,7 @@ export default function LeaveBalancesPage() {
                   maxLength={500}
                   value={form.reason}
                   onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
-                  placeholder="e.g. Annual carry-over, policy correction"
+                  placeholder="e.g. Policy correction, bonus days"
                   className={inputCls}
                 />
               </label>
@@ -199,6 +230,7 @@ export default function LeaveBalancesPage() {
                 <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Staff</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-600 dark:text-slate-400">Leave Type</th>
                 <th className="px-4 py-3 text-right font-medium text-slate-600 dark:text-slate-400">Allocated</th>
+                <th className="px-4 py-3 text-right font-medium text-slate-600 dark:text-slate-400">Carryover</th>
                 <th className="px-4 py-3 text-right font-medium text-slate-600 dark:text-slate-400">Used</th>
                 <th className="px-4 py-3 text-right font-medium text-slate-600 dark:text-slate-400">Remaining</th>
                 <th className="px-4 py-3" />
@@ -207,39 +239,107 @@ export default function LeaveBalancesPage() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {balances.map((b) => {
                 const staffName = staff.find((s) => s.id === b.user_id)?.name ?? "—";
-                const typeName = leaveTypes.find((t) => t.id === b.leave_type_id)?.name ?? "—";
-                const pct = b.balance_days > 0 ? (b.used_days / b.balance_days) * 100 : 0;
+                const lt = leaveTypes.find((t) => t.id === b.leave_type_id);
+                const typeName = lt?.name ?? "—";
+                const isAnnual = lt?.tenure_based ?? false;
+                const effective = b.balance_days + b.carryover_days;
+                const pct = effective > 0 ? (b.used_days / effective) * 100 : 0;
                 const low = b.remaining_days <= 3;
+                const isExpanded = expandedId === b.id;
 
                 return (
-                  <tr key={b.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
-                    <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">{staffName}</td>
-                    <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{typeName}</td>
-                    <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{b.balance_days}</td>
-                    <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{b.used_days}</td>
-                    <td className="px-4 py-3 text-right">
-                      <span className={`font-medium ${low ? "text-rose-600 dark:text-rose-400" : "text-teal-700 dark:text-teal-400"}`}>
-                        {b.remaining_days}
-                      </span>
-                      {b.balance_days > 0 && (
-                        <div className="mt-1 ml-auto h-1.5 w-16 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                          <div
-                            className={`h-full rounded-full ${pct >= 80 ? "bg-rose-500" : "bg-teal-500"}`}
-                            style={{ width: `${Math.min(100, pct)}%` }}
-                          />
+                  <React.Fragment key={b.id}>
+                    <tr className={`hover:bg-slate-50 dark:hover:bg-slate-800 ${isExpanded ? "bg-slate-50 dark:bg-slate-800" : ""}`}>
+                      <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">{staffName}</td>
+                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{typeName}</td>
+                      <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">
+                        {isAnnual ? b.balance_days : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {b.carryover_days > 0 ? (
+                          <span className="font-medium text-indigo-600 dark:text-indigo-400">+{b.carryover_days}</span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{b.used_days}</td>
+                      <td className="px-4 py-3 text-right">
+                        {isAnnual ? (
+                          <>
+                            <span className={`font-medium ${low ? "text-rose-600 dark:text-rose-400" : "text-teal-700 dark:text-teal-400"}`}>
+                              {b.remaining_days}
+                            </span>
+                            {effective > 0 && (
+                              <div className="mt-1 ml-auto h-1.5 w-16 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                                <div
+                                  className={`h-full rounded-full ${pct >= 80 ? "bg-rose-500" : "bg-teal-500"}`}
+                                  style={{ width: `${Math.min(100, pct)}%` }}
+                                />
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-slate-400 text-xs">tracking only</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={() => toggleHistory(b.id)}
+                            className="text-xs text-slate-500 hover:underline dark:text-slate-400"
+                          >
+                            {isExpanded ? "Hide history" : "History"}
+                          </button>
+                          {isAnnual && (
+                            <button
+                              type="button"
+                              onClick={() => openModal(b)}
+                              className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
+                            >
+                              Adjust
+                            </button>
+                          )}
                         </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => openModal(b)}
-                        className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
-                      >
-                        Adjust
-                      </button>
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr className="bg-slate-50 dark:bg-slate-800/50">
+                        <td colSpan={7} className="px-6 py-3">
+                          {adjLoading ? (
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Loading…</p>
+                          ) : adjustments.length === 0 ? (
+                            <p className="text-xs text-slate-400 dark:text-slate-500">No manual adjustments recorded.</p>
+                          ) : (
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-left text-slate-500 dark:text-slate-400">
+                                  <th className="pb-1 pr-4 font-medium">Date</th>
+                                  <th className="pb-1 pr-4 font-medium">Change</th>
+                                  <th className="pb-1 font-medium">Reason</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                {adjustments.map((a) => (
+                                  <tr key={a.id}>
+                                    <td className="py-1 pr-4 text-slate-500 dark:text-slate-400">
+                                      {new Date(a.created_at).toLocaleDateString()}
+                                    </td>
+                                    <td className="py-1 pr-4">
+                                      <span className={`font-semibold ${a.delta_days > 0 ? "text-teal-700 dark:text-teal-400" : "text-rose-600 dark:text-rose-400"}`}>
+                                        {a.delta_days > 0 ? "+" : ""}{a.delta_days}d
+                                      </span>
+                                    </td>
+                                    <td className="py-1 text-slate-700 dark:text-slate-300">{a.reason}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>

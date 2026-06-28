@@ -193,6 +193,8 @@ export type LeaveType = {
   default_days_per_year: number | null;
   requires_approval: boolean;
   tenure_based: boolean;
+  allow_carryover: boolean;
+  carryover_max_days: number | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -203,6 +205,8 @@ export type LeaveTypeCreateInput = {
   default_days_per_year?: number | null;
   requires_approval?: boolean;
   tenure_based?: boolean;
+  allow_carryover?: boolean;
+  carryover_max_days?: number | null;
 };
 
 export type LeaveTypeUpdateInput = {
@@ -210,6 +214,8 @@ export type LeaveTypeUpdateInput = {
   default_days_per_year?: number | null;
   requires_approval?: boolean;
   tenure_based?: boolean;
+  allow_carryover?: boolean;
+  carryover_max_days?: number | null;
   active?: boolean;
 };
 
@@ -247,6 +253,7 @@ export type LeaveBalance = {
   leave_type_id: string;
   year: number;
   balance_days: number;
+  carryover_days: number;
   used_days: number;
   remaining_days: number;
   created_at: string;
@@ -259,6 +266,15 @@ export type AdjustBalanceInput = {
   year: number;
   delta_days: number;
   reason: string;
+};
+
+export type LeaveBalanceAdjustment = {
+  id: string;
+  leave_balance_id: string;
+  adjusted_by: string;
+  delta_days: number;
+  reason: string;
+  created_at: string;
 };
 
 export type CorrectionStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";

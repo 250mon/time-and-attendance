@@ -19,6 +19,8 @@ class LeaveType(Base):
     default_days_per_year: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     requires_approval: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
     tenure_based: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
+    allow_carryover: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
+    carryover_max_days: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

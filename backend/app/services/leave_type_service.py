@@ -35,6 +35,9 @@ def get_leave_type_or_none(db: Session, clinic_id: UUID, leave_type_id: UUID) ->
     ).first()
 
 
+_NULLABLE_FIELDS = {"default_days_per_year", "carryover_max_days"}
+
+
 def create_leave_type(
     db: Session,
     actor: User,
@@ -42,6 +45,8 @@ def create_leave_type(
     default_days_per_year: int | None = None,
     requires_approval: bool = True,
     tenure_based: bool = False,
+    allow_carryover: bool = False,
+    carryover_max_days: int | None = None,
 ) -> LeaveType:
     if not can_manage_schedules(actor):
         raise LeaveTypeError("Insufficient permissions.")
@@ -54,6 +59,8 @@ def create_leave_type(
         default_days_per_year=default_days_per_year,
         requires_approval=requires_approval,
         tenure_based=tenure_based,
+        allow_carryover=allow_carryover,
+        carryover_max_days=carryover_max_days,
     )
     db.add(lt)
     db.commit()
@@ -71,7 +78,7 @@ def update_leave_type(
         raise LeaveTypeError("Insufficient permissions.")
     lt = get_leave_type(db, actor.clinic_id, leave_type_id)
     for field, value in kwargs.items():
-        if value is not None or field == "default_days_per_year":
+        if value is not None or field in _NULLABLE_FIELDS:
             setattr(lt, field, value)
     db.commit()
     db.refresh(lt)

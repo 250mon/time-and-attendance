@@ -15,6 +15,8 @@ class LeaveTypeResponse(BaseModel):
     default_days_per_year: int | None
     requires_approval: bool
     tenure_based: bool
+    allow_carryover: bool
+    carryover_max_days: int | None
     active: bool
     created_at: datetime
     updated_at: datetime
@@ -30,6 +32,8 @@ class LeaveTypeCreateRequest(BaseModel):
     )
     requires_approval: bool = True
     tenure_based: bool = False
+    allow_carryover: bool = False
+    carryover_max_days: int | None = Field(None, ge=1, le=365)
 
 
 class LeaveTypeUpdateRequest(BaseModel):
@@ -42,6 +46,8 @@ class LeaveTypeUpdateRequest(BaseModel):
     )
     requires_approval: bool | None = None
     tenure_based: bool | None = None
+    allow_carryover: bool | None = None
+    carryover_max_days: int | None = Field(None, ge=1, le=365)
     active: bool | None = None
 
 
