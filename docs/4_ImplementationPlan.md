@@ -419,16 +419,62 @@ Exit criteria:
 - Deployment and backup instructions are documented.
 - Security-sensitive workflows are covered by tests.
 
-## 14. Cross-Cutting Implementation Rules
+## 14. Phase 11: Multi-Tenant (Multi-Clinic)
+
+Backlog: `CT-1101` through `CT-1110`. Full design: [5_MultiTenantPlan.md](5_MultiTenantPlan.md).
+
+**Current gap:** Schema has `clinic_id` on most tables and services filter by `actor.clinic_id`, but email is globally unique, login has no tenant context, timezone uses a global env var, and only one clinic is seeded at bootstrap.
+
+### MT-1: Schema and isolation (CT-1101, CT-1102)
+
+- Add `slug`, `status` to `clinics`; `UNIQUE (clinic_id, email)` on `users`.
+- Migration pre-flight: assert no duplicate `(clinic_id, email)` rows before dropping the global `UNIQUE (email)` constraint.
+- Backfill slug for existing clinic; validate against slug regex `^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$`; add `SEED_CLINIC_SLUG` to env examples.
+- Add mandatory `cid` (`clinic_id`) claim to JWT; update `create_access_token`, `decode_access_token`, and `get_current_user` to embed and verify it.
+- `get_current_user` must also check `clinic.status == ACTIVE` so suspension takes effect on all in-flight sessions immediately.
+- Audit all services for missing `clinic_id` filters.
+- Add `tests/test_tenant_isolation.py`.
+
+### MT-2: Per-clinic timezone (CT-1103)
+
+- Resolve timezone from `clinics.timezone` in attendance, correction, and report services.
+- Tests: two clinics in different timezones produce correct date boundaries.
+
+### MT-3: Clinic profile (CT-1104)
+
+- `GET /clinics/me`, `PATCH /clinics/me` (OWNER/ADMIN).
+- Extend Settings UI with clinic name, timezone, address.
+
+### MT-4: Slug-based login (CT-1105, CT-1107)
+
+- Extend login API with `clinic_slug`; public slug lookup endpoint (rate-limited).
+- Login form: clinic slug field; `MULTI_TENANT_ENABLED` for backward-compatible single-clinic mode.
+- Include clinic in `/auth/me` response.
+
+### MT-5: Clinic onboarding (CT-1106, CT-1110)
+
+- `POST /clinics` protected by `CLINIC_BOOTSTRAP_SECRET`.
+- **Refactor `seed_default_leave_types` to accept an explicit `clinic_id`** before implementing this phase.
+- Create clinic, owner account, and default leave types.
+- CT-1110 (clinic invitations) is now P1 and should ship alongside or immediately after CT-1106 — adding tenants without a token-based invite flow requires SSH/DB access.
+- Operator runbook in README (interim psql procedure in `5_MultiTenantPlan.md §12`).
+
+Exit criteria:
+
+- Two clinics coexist with no data leakage.
+- Same email in two clinics works with different passwords.
+- Cross-tenant tests pass in CI.
+
+## 15. Cross-Cutting Implementation Rules
 
 - Never physically delete users, raw punches, audit logs, or payroll-relevant history through normal application flows.
 - Store raw events separately from calculated summaries.
 - Make attendance and leave calculations deterministic and recalculable.
 - Require server-side authorization even when frontend routes are hidden.
 - Require reason fields for manual corrections, balance adjustments, overrides, unlocks, and rejections where applicable.
-- Keep post-MVP features such as GPS, QR code, biometric devices, notifications, and multi-branch support out of the MVP path.
+- Multi-tenant (multi-clinic) SaaS — see [Multi-Tenant Plan](5_MultiTenantPlan.md) and Phase 11 below
 
-## 15. Suggested Milestones
+## 16. Suggested Milestones
 
 | Milestone | Scope | Target Outcome |
 | --- | --- | --- |
@@ -438,8 +484,9 @@ Exit criteria:
 | M4 | Corrections and leave | Staff requests are approved or rejected through auditable workflows. |
 | M5 | Reports and locking | Admin can export monthly data and lock reviewed periods. |
 | M6 | Hardening | MVP is tested, documented, and ready for pilot deployment. |
+| M7 | Multi-tenant | Multiple clinics in one deployment with isolated data and slug-based login. |
 
-## 16. Initial Definition of Done
+## 17. Initial Definition of Done
 
 Each feature is done when:
 

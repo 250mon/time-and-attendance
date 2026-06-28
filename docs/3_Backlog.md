@@ -117,4 +117,21 @@ This backlog translates the PRD and development guide into implementation-ready 
 | CT-2003 | P2 | Needs Detail | Clinic Wi-Fi/IP restriction | Validate network boundaries without blocking legitimate users unexpectedly. |
 | CT-2004 | P2 | Needs Detail | Notifications | Support reminders and approval notifications by email, SMS, or KakaoTalk. |
 | CT-2005 | P2 | Needs Detail | Public holiday calendar integration | Sync holidays into schedules and attendance calculations. |
-| CT-2006 | P2 | Needs Detail | Multi-branch support | Extend clinic, role, schedule, and reporting models for branch separation. |
+| CT-2006 | P2 | Needs Detail | Multi-branch support | Branch-level schedules/reports within one clinic — distinct from multi-tenant (see [Multi-Tenant Plan](5_MultiTenantPlan.md)). |
+
+## Phase 11: Multi-Tenant (Multi-Clinic)
+
+See [5_MultiTenantPlan.md](5_MultiTenantPlan.md) for full design.
+
+| ID | Priority | Status | Item | Acceptance Notes |
+| --- | --- | --- | --- | --- |
+| CT-1101 | P1 | Ready | Per-clinic email uniqueness | Migrate `users.email` to `UNIQUE (clinic_id, email)`; backfill slug on clinics. |
+| CT-1102 | P1 | Ready | Tenant isolation test suite | Cross-clinic IDOR tests for staff, leave, attendance, reports, audit. |
+| CT-1103 | P1 | Ready | Per-clinic timezone | Use `clinics.timezone` in calculation services instead of global env only. |
+| CT-1104 | P1 | Ready | Clinic profile API | `GET/PATCH /clinics/me`; owner/admin can update name, timezone, address. |
+| CT-1105 | P1 | Ready | Login with clinic slug | `LoginRequest.clinic_slug`; slug field on login UI; `GET /clinics/by-slug/{slug}`. |
+| CT-1106 | P1 | Ready | Clinic onboarding | `POST /clinics` with bootstrap secret; seed leave types for new clinic. **Prerequisite:** refactor `seed_default_leave_types` to accept an explicit `clinic_id` — current impl uses `Clinic.first()` and will silently skip new tenants. |
+| CT-1107 | P2 | Needs Detail | Single-clinic compatibility mode | `MULTI_TENANT_ENABLED=false` keeps email-only login for legacy deploys. |
+| CT-1108 | P2 | Needs Detail | Clinic status (suspend) | Suspended clinic blocks **all requests** (not only new logins) — `get_current_user` must check `clinic.status` on every call so existing sessions are invalidated immediately. |
+| CT-1109 | P2 | Needs Detail | Platform admin role | List/suspend clinics across tenants (defer until needed). |
+| CT-1110 | P1 | Needs Detail | Clinic invitations | Token-based invite flow for new clinic owners. Escalated P2→P1: without this, adding a tenant requires SSH + direct DB access, which is an ops burden and a security anti-pattern for any real SaaS deployment. |

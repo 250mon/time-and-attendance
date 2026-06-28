@@ -2,13 +2,13 @@ name: time-and-attendance
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-clinic_time}
       POSTGRES_USER: ${POSTGRES_USER:-clinic_time_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
       - ./infra/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh
     healthcheck:
       test:
@@ -47,6 +47,7 @@ services:
       - .env
     environment:
       NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
+      NEXT_PUBLIC_MULTI_TENANT_ENABLED: ${NEXT_PUBLIC_MULTI_TENANT_ENABLED:-false}
     expose:
       - "3000"
     depends_on:

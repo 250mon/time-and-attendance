@@ -1,10 +1,12 @@
 from fastapi import APIRouter
 
-from app.api.routes import attendance, audit_logs, auth, closings, corrections, health, leave, reports, schedules, shifts, staff
+from app.api.routes import attendance, audit_logs, auth, clinics, closings, corrections, health, leave, platform, reports, schedules, shifts, staff
 
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
+api_router.include_router(clinics.router)
+api_router.include_router(platform.router)
 api_router.include_router(staff.router)
 api_router.include_router(shifts.router)
 api_router.include_router(schedules.router)

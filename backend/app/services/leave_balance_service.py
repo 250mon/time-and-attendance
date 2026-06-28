@@ -4,8 +4,10 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.core.clinic_time import clinic_today
 from app.core.kr_labor import annual_leave_for_calendar_year, as_of_date_for_balance_year
 from app.core.permissions import can_manage_schedules
+from app.models.clinic import Clinic
 from app.models.enums import AuditAction
 from app.models.leave_balance import LeaveBalance, LeaveBalanceAdjustment
 from app.models.leave_type import LeaveType
@@ -23,6 +25,11 @@ def _dec(value: float | int | Decimal) -> Decimal:
 
 def _get_leave_type(db: Session, leave_type_id: UUID) -> LeaveType | None:
     return db.query(LeaveType).filter(LeaveType.id == leave_type_id).first()
+
+
+def _clinic_today(db: Session, clinic_id: UUID) -> date:
+    clinic = db.get(Clinic, clinic_id)
+    return clinic_today(clinic.timezone if clinic else None)
 
 
 def get_or_create_balance(
@@ -66,7 +73,7 @@ def get_or_create_balance(
     if lt and lt.tenure_based:
         user = db.query(User).filter(User.id == user_id).first()
         if user and user.hire_date:
-            today = date.today()
+            today = _clinic_today(db, clinic_id)
             as_of = as_of_date_for_balance_year(year, today)
             default = annual_leave_for_calendar_year(
                 user.hire_date,
@@ -242,7 +249,8 @@ def assign_default_balances(db: Session, user: User) -> None:
     """Create balance rows for tenure-based leave types when a staff member is onboarded."""
     if user.hire_date is None:
         return
-    year = date.today().year
+    today = _clinic_today(db, user.clinic_id)
+    year = today.year
     tenure_types = (
         db.query(LeaveType)
         .filter(
@@ -274,6 +282,27 @@ def list_balances(
     if year:
         q = q.filter(LeaveBalance.year == year)
 
-    return q.order_by(
+    ordered_q = q.order_by(
         LeaveBalance.user_id, LeaveBalance.year, LeaveBalance.leave_type_id
-    ).all()
+    )
+    balances = ordered_q.all()
+
+    # Refresh formula-based balances for the current year so that anniversary
+    # grants (e.g. the 15-day grant on the exact 1-year hire date) are visible
+    # immediately without waiting for a leave submission to trigger the lazy
+    # update in get_or_create_balance.
+    today = _clinic_today(db, actor.clinic_id)
+    current_year = today.year
+    refreshed = False
+    for b in balances:
+        if b.year == current_year:
+            lt = _get_leave_type(db, b.leave_type_id)
+            if lt and lt.tenure_based:
+                get_or_create_balance(db, b.clinic_id, b.user_id, b.leave_type_id, b.year)
+                refreshed = True
+
+    if refreshed:
+        db.commit()
+        balances = ordered_q.all()
+
+    return balances

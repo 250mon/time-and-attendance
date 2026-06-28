@@ -3,7 +3,17 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.models.enums import EmploymentType, UserRole, UserStatus
+from app.models.enums import ClinicStatus, EmploymentType, UserRole, UserStatus
+
+
+class ClinicSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    slug: str
+    status: ClinicStatus
+    timezone: str
 
 
 class UserResponse(BaseModel):
@@ -21,6 +31,11 @@ class UserResponse(BaseModel):
     status: UserStatus
     created_at: datetime
     updated_at: datetime
+
+
+class AuthUserResponse(UserResponse):
+    """Extended user response for /auth/login and /auth/me — includes clinic summary."""
+    clinic: ClinicSummary
 
 
 class StaffCreateRequest(BaseModel):

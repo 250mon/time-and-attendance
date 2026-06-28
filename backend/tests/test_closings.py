@@ -255,7 +255,7 @@ def test_audit_log_created_on_leave_approve(client: TestClient) -> None:
 
 def test_audit_log_balance_adjusted(client: TestClient) -> None:
     login(client, "manager@test.example", "ManagerPass123")
-    lt = client.post("/leave/types", json={"name": "Flex", "default_days_per_year": 10}).json()
+    lt = client.post("/leave/types", json={"name": "Flex", "tenure_based": True}).json()
 
     login(client, "staff@test.example", "StaffPass123")
     resp = client.get("/auth/me")

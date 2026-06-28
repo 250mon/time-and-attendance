@@ -38,6 +38,14 @@ def test_june_27_2025_hire_pre_anniversary_uses_monthly_only():
     assert annual_leave_for_calendar_year(hire, 2026, date(2026, 6, 26)) == Decimal("5.0")
 
 
+def test_june_28_2025_hire_on_exact_anniversary_includes_15_day_grant():
+    """On the 1-year anniversary, 2026 balance includes proration, monthly, and top-up."""
+    hire = date(2025, 6, 28)
+    as_of = date(2026, 6, 28)
+    assert annual_leave_for_calendar_year(hire, 2025, as_of) == Decimal("6.0")
+    assert annual_leave_for_calendar_year(hire, 2026, as_of) == Decimal("20.0")
+
+
 def test_june_27_2025_hire_post_anniversary_includes_fiscal_and_top_up():
     """After anniversary, calendar-year balance includes Jan grant and adjustments."""
     hire = date(2025, 6, 27)

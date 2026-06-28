@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -137,6 +139,40 @@ def test_patch_can_clear_nullable_fields(client: TestClient, db_session: Session
     body = clear_response.json()
     assert body["phone"] is None
     assert body["hire_date"] is None
+
+
+def test_hire_date_change_recalculates_annual_leave_balance(
+    client: TestClient, db_session: Session
+) -> None:
+    YEAR = date.today().year
+
+    # Create a formula-based annual leave type
+    login(client, "admin@test.example", "AdminPass123")
+    resp = client.post("/leave/types", json={"name": "Annual Leave", "tenure_based": True})
+    assert resp.status_code == 201
+    lt_id = resp.json()["id"]
+
+    staff = db_session.query(User).filter(User.email == "staff@test.example").one()
+
+    # Set hire_date to 6 years ago — formula gives well over 15 days
+    resp = client.patch(f"/staff/{staff.id}", json={"hire_date": f"{YEAR - 6}-01-01"})
+    assert resp.status_code == 200
+
+    login(client, "staff@test.example", "StaffPass123")
+    balances = client.get("/leave/balances").json()
+    b_old = next(b for b in balances if b["leave_type_id"] == lt_id)
+    old_balance = b_old["balance_days"]
+    assert old_balance > 0
+
+    # Change hire_date to this year — monthly accrual only, far fewer days
+    login(client, "admin@test.example", "AdminPass123")
+    resp = client.patch(f"/staff/{staff.id}", json={"hire_date": f"{YEAR}-01-01"})
+    assert resp.status_code == 200
+
+    login(client, "staff@test.example", "StaffPass123")
+    balances = client.get("/leave/balances").json()
+    b_new = next(b for b in balances if b["leave_type_id"] == lt_id)
+    assert b_new["balance_days"] < old_balance
 
 
 def test_non_owner_cannot_assign_admin_role(client: TestClient, db_session: Session) -> None:

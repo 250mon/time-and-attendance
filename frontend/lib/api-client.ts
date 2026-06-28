@@ -6,7 +6,15 @@ import type {
   AttendanceCorrectionRequest,
   AttendanceDay,
   AttendancePunch,
+  AuthUser,
+  Clinic,
+  ClinicCreateInput,
+  ClinicPublicInfo,
+  ClinicUpdateInput,
   CorrectionCreateInput,
+  PlatformClinic,
+  PlatformClinicUpdateInput,
+  PlatformMetrics,
   LeaveBalance,
   LeaveRequest,
   MonthlyClosing,
@@ -36,15 +44,13 @@ export const apiClient = axios.create({
   },
 });
 
-// Redirect to /login on 401, except for /auth/me which AuthProvider polls on load.
+// Redirect to /login on 401, except for paths that manage their own auth state.
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (
-      axios.isAxiosError(error) &&
-      error.response?.status === 401 &&
-      !error.config?.url?.includes("/auth/me")
-    ) {
+    const url = error.config?.url ?? "";
+    const selfManaged = url.includes("/auth/me") || url.includes("/platform/");
+    if (axios.isAxiosError(error) && error.response?.status === 401 && !selfManaged) {
       window.location.replace("/login");
     }
     return Promise.reject(error);
@@ -59,8 +65,13 @@ export async function fetchHealth(): Promise<{ status: string }> {
 export async function loginRequest(
   email: string,
   password: string,
-): Promise<User> {
-  const response = await apiClient.post<User>("/auth/login", { email, password });
+  clinicSlug?: string,
+): Promise<AuthUser> {
+  const response = await apiClient.post<AuthUser>("/auth/login", {
+    email,
+    password,
+    clinic_slug: clinicSlug || null,
+  });
   return response.data;
 }
 
@@ -68,8 +79,13 @@ export async function logoutRequest(): Promise<void> {
   await apiClient.post("/auth/logout");
 }
 
-export async function fetchCurrentUser(): Promise<User> {
-  const response = await apiClient.get<User>("/auth/me");
+export async function fetchCurrentUser(): Promise<AuthUser> {
+  const response = await apiClient.get<AuthUser>("/auth/me");
+  return response.data;
+}
+
+export async function fetchClinicBySlug(slug: string): Promise<ClinicPublicInfo> {
+  const response = await apiClient.get<ClinicPublicInfo>(`/clinics/by-slug/${slug}`);
   return response.data;
 }
 
@@ -282,6 +298,18 @@ export async function fetchAttendanceDays(params?: {
   return response.data;
 }
 
+// ── Clinic ────────────────────────────────────────────────────────────────────
+
+export async function fetchClinic(): Promise<Clinic> {
+  const response = await apiClient.get<Clinic>("/clinics/me");
+  return response.data;
+}
+
+export async function updateClinic(data: ClinicUpdateInput): Promise<Clinic> {
+  const response = await apiClient.patch<Clinic>("/clinics/me", data);
+  return response.data;
+}
+
 // ── Closings ──────────────────────────────────────────────────────────────────
 
 export async function fetchClosings(params?: { year?: number }): Promise<MonthlyClosing[]> {
@@ -346,6 +374,71 @@ export async function downloadReport(
     params: { ...params, format: "xlsx" },
     responseType: "blob",
   });
+  return response.data;
+}
+
+// ── Platform Admin ────────────────────────────────────────────────────────────
+
+function platformHeaders(token: string) {
+  return { "X-Platform-Token": token };
+}
+
+export async function createPlatformClinic(
+  token: string,
+  data: ClinicCreateInput,
+): Promise<PlatformClinic> {
+  const response = await apiClient.post<PlatformClinic>("/platform/clinics", data, {
+    headers: platformHeaders(token),
+  });
+  return response.data;
+}
+
+export async function updatePlatformClinic(
+  token: string,
+  clinicId: string,
+  data: PlatformClinicUpdateInput,
+): Promise<PlatformClinic> {
+  const response = await apiClient.patch<PlatformClinic>(`/platform/clinics/${clinicId}`, data, {
+    headers: platformHeaders(token),
+  });
+  return response.data;
+}
+
+export async function fetchPlatformClinics(token: string): Promise<PlatformClinic[]> {
+  const response = await apiClient.get<PlatformClinic[]>("/platform/clinics", {
+    headers: platformHeaders(token),
+  });
+  return response.data;
+}
+
+export async function fetchPlatformMetrics(token: string): Promise<PlatformMetrics> {
+  const response = await apiClient.get<PlatformMetrics>("/platform/metrics", {
+    headers: platformHeaders(token),
+  });
+  return response.data;
+}
+
+export async function suspendPlatformClinic(
+  token: string,
+  clinicId: string,
+): Promise<PlatformClinic> {
+  const response = await apiClient.post<PlatformClinic>(
+    `/platform/clinics/${clinicId}/suspend`,
+    null,
+    { headers: platformHeaders(token) },
+  );
+  return response.data;
+}
+
+export async function activatePlatformClinic(
+  token: string,
+  clinicId: string,
+): Promise<PlatformClinic> {
+  const response = await apiClient.post<PlatformClinic>(
+    `/platform/clinics/${clinicId}/activate`,
+    null,
+    { headers: platformHeaders(token) },
+  );
   return response.data;
 }
 

@@ -6,6 +6,7 @@ This repository contains planning documentation for ClinicTime, a small-clinic t
 
 - `docs/1_PRD.md` defines product scope, personas, MVP requirements, and post-MVP boundaries.
 - `docs/2_DevelopmentGuide.md` defines the technical stack, phases, and target monorepo layout.
+- `docs/5_MultiTenantPlan.md` defines Phase 11 multi-clinic SaaS design (planned, not yet implemented).
 
 When implementation begins, follow the planned structure from the development guide:
 

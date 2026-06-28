@@ -1,5 +1,79 @@
 export type UserRole = "OWNER" | "ADMIN" | "MANAGER" | "STAFF";
 
+export type ClinicStatus = "ACTIVE" | "SUSPENDED";
+
+export type ClinicSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  status: ClinicStatus;
+  timezone: string;
+};
+
+export type Clinic = {
+  id: string;
+  name: string;
+  slug: string;
+  status: ClinicStatus;
+  timezone: string;
+  address: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AuthUser = User & {
+  clinic: ClinicSummary;
+};
+
+export type ClinicUpdateInput = {
+  name?: string;
+  timezone?: string;
+  address?: string | null;
+};
+
+export type ClinicPublicInfo = {
+  name: string;
+  slug: string;
+};
+
+export type ClinicCreateInput = {
+  name: string;
+  slug: string;
+  timezone: string;
+  address?: string | null;
+  owner_name: string;
+  owner_email: string;
+  owner_password: string;
+};
+
+export type PlatformClinic = {
+  id: string;
+  name: string;
+  slug: string;
+  status: ClinicStatus;
+  timezone: string;
+  address: string | null;
+  user_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PlatformClinicUpdateInput = {
+  name?: string;
+  timezone?: string;
+  address?: string | null;
+  owner_name?: string;
+  owner_email?: string;
+  owner_password?: string;
+};
+
+export type PlatformMetrics = {
+  total_clinics: number;
+  active_clinics: number;
+  suspended_clinics: number;
+  total_users: number;
+};
+
 export type EmploymentType =
   | "FULL_TIME"
   | "PART_TIME"

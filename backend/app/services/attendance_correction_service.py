@@ -4,9 +4,10 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.clinic_time import clinic_tz
 from app.core.permissions import can_manage_schedules
 from app.models.attendance_correction import AttendanceCorrectionRequest
+from app.models.clinic import Clinic
 from app.models.enums import AuditAction, CorrectionStatus
 from app.models.user import User
 from app.services import audit_service
@@ -15,10 +16,6 @@ from app.services.closing_service import is_month_locked
 
 class CorrectionError(Exception):
     pass
-
-
-def _tz() -> ZoneInfo:
-    return ZoneInfo(settings.clinic_timezone)
 
 
 def _parse_time(hhmm: str) -> time:
@@ -32,10 +29,10 @@ def _parse_time(hhmm: str) -> time:
         raise CorrectionError(f"Invalid time value: {hhmm!r}.")
 
 
-def _to_utc(work_date: date, hhmm: str) -> datetime:
+def _to_utc(work_date: date, hhmm: str, tz: ZoneInfo) -> datetime:
     """Convert HH:MM on work_date (clinic local time) to a UTC datetime."""
     t = _parse_time(hhmm)
-    local_dt = datetime(work_date.year, work_date.month, work_date.day, t.hour, t.minute, tzinfo=_tz())
+    local_dt = datetime(work_date.year, work_date.month, work_date.day, t.hour, t.minute, tzinfo=tz)
     return local_dt.astimezone(UTC)
 
 
@@ -63,8 +60,10 @@ def create_correction(
     if corrected_clock_in is None and corrected_clock_out is None:
         raise CorrectionError("At least one corrected time must be provided.")
 
-    ci_utc = _to_utc(work_date, corrected_clock_in) if corrected_clock_in else None
-    co_utc = _to_utc(work_date, corrected_clock_out) if corrected_clock_out else None
+    clinic = db.get(Clinic, actor.clinic_id)
+    tz = clinic_tz(clinic.timezone if clinic else None)
+    ci_utc = _to_utc(work_date, corrected_clock_in, tz) if corrected_clock_in else None
+    co_utc = _to_utc(work_date, corrected_clock_out, tz) if corrected_clock_out else None
 
     if ci_utc and co_utc and co_utc <= ci_utc:
         raise CorrectionError("Corrected clock-out must be after corrected clock-in.")

@@ -75,7 +75,7 @@ Seven leave types are created automatically (Korean labor law and clinic default
 | Parental Leave (육아휴직) | 365 | Yes |
 | Family Care Leave (가족돌봄휴가) | 10 | Yes |
 
-> **To re-seed from scratch**, drop and recreate the database:
+> **To re-seed from scratch**, drop and recreate the database (required when upgrading Postgres major versions — PG 18 mounts data at `/var/lib/postgresql` instead of `/var/lib/postgresql/data`):
 >
 > ```bash
 > docker compose -f docker-compose.dev.yml --env-file dev.env down -v   # removes the postgres volume
@@ -273,3 +273,91 @@ docs/        Product and implementation documentation
 - [Development Guide](docs/2_DevelopmentGuide.md)
 - [Backlog](docs/3_Backlog.md)
 - [Implementation Plan](docs/4_ImplementationPlan.md)
+- [Multi-Tenant Plan](docs/5_MultiTenantPlan.md)
+
+## Multi-Tenant
+
+All multi-tenant phases are implemented. See [Multi-Tenant Plan](docs/5_MultiTenantPlan.md) for the full design.
+
+| Phase | What it covers | Status |
+|-------|---------------|--------|
+| MT-1 | Schema (`clinic_id` isolation, per-clinic email uniqueness, JWT `cid` claim) | ✅ done |
+| MT-2 | Per-clinic timezone in attendance, correction, and report services | ✅ done |
+| MT-3 | `GET/PATCH /clinics/me` API + Settings UI | ✅ done |
+| MT-4 | Clinic slug on login form; `MULTI_TENANT_ENABLED` flag | ✅ done |
+| MT-5 | `POST /clinics` onboarding endpoint | ✅ done |
+| MT-6 | Platform admin UI: create/list/suspend/activate clinics, aggregate metrics | ✅ done |
+
+### Single-clinic mode (default)
+
+Leave `MULTI_TENANT_ENABLED=false` (the default). Login requires only email + password; the single seeded clinic is used automatically.
+
+### Multi-tenant mode
+
+Set both in your `.env`:
+
+```dotenv
+MULTI_TENANT_ENABLED=true
+NEXT_PUBLIC_MULTI_TENANT_ENABLED=true
+```
+
+The login form gains a required **Clinic ID** field. Users must enter their clinic's slug to log in.
+
+### Adding a clinic (operator runbook)
+
+1. Set `CLINIC_BOOTSTRAP_SECRET` to a strong random value in `.env` and restart the stack.
+
+2. `POST /clinics` with the secret in `X-Bootstrap-Secret`:
+
+   ```bash
+   curl -X POST https://yourdomain.com/api/clinics \
+     -H "Content-Type: application/json" \
+     -H "X-Bootstrap-Secret: <your-secret>" \
+     -d '{
+       "name": "Seoul Dental Clinic",
+       "slug": "seoul-dental",
+       "timezone": "Asia/Seoul",
+       "address": "123 Gangnam-daero, Seoul",
+       "owner_name": "Dr. Kim",
+       "owner_email": "kim@seoul-dental.example",
+       "owner_password": "StrongPass123!"
+     }'
+   ```
+
+   This creates the clinic, the owner account, and the default Korean leave types in one call.
+
+3. The owner logs in at the normal login URL using `clinic_slug: "seoul-dental"`.
+
+4. To suspend a clinic immediately (all in-flight sessions are rejected on the next request):
+
+   Use the Platform Admin UI at `/platform` (see below), or directly via SQL:
+
+   ```sql
+   UPDATE clinics SET status = 'SUSPENDED' WHERE slug = 'seoul-dental';
+   ```
+
+**Slug rules:** 3–64 characters, lowercase letters/digits/hyphens, must not start or end with a hyphen. Reserved words (`api`, `admin`, `www`, `health`, `me`, `demo`, etc.) are rejected.
+
+### Platform admin (MT-6)
+
+A standalone operator UI lives at `/platform` — separate from the clinic login flow, so it is always accessible regardless of `MULTI_TENANT_ENABLED`.
+
+1. Set `PLATFORM_ADMIN_SECRET` to a strong random value in `.env` and restart the stack.
+
+2. Open `https://yourdomain.com/platform` and enter the secret.
+
+3. The dashboard shows:
+   - **Metrics:** total clinics, active, suspended, total users.
+   - **Create Clinic** form: fill in name, slug, timezone, address, and owner credentials — creates the clinic, owner account, and default leave types in one step.
+   - **Clinic table:** name, slug, status badge, user count, timezone, created date.
+   - **Actions:** Suspend or Activate any clinic with one click. Suspending takes effect immediately — authenticated users of that clinic receive 401 on their next request.
+
+### Multi-tenant env vars
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MULTI_TENANT_ENABLED` | `false` | Require clinic slug at login (`true`/`false`) |
+| `NEXT_PUBLIC_MULTI_TENANT_ENABLED` | `false` | Mirror of above for the Next.js frontend build |
+| `SEED_CLINIC_SLUG` | `demo` | Slug assigned to the bootstrap clinic on first boot |
+| `CLINIC_BOOTSTRAP_SECRET` | *(empty — disabled)* | Enables `POST /clinics`; set to a strong secret to activate |
+| `PLATFORM_ADMIN_SECRET` | *(empty — disabled)* | Enables `/platform` admin UI; set to a strong secret to activate |

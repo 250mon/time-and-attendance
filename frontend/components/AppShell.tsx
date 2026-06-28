@@ -73,11 +73,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="border-b border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-teal-700 dark:text-teal-400">
-              ClinicTime
+            <p className="text-sm font-semibold text-teal-700 dark:text-teal-400">
+              {user.clinic.name}
             </p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Signed in as {user.name} ({user.role})
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Signed in as {user.name} · {user.role}
             </p>
           </div>
           <button

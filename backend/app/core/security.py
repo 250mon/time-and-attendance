@@ -23,13 +23,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     )
 
 
-def create_access_token(user_id: UUID) -> str:
+def create_access_token(user_id: UUID, clinic_id: UUID) -> str:
     expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload: dict[str, Any] = {"sub": str(user_id), "exp": expire}
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "cid": str(clinic_id),
+        "exp": expire,
+    }
     token: str = jwt.encode(payload, settings.backend_secret_key, algorithm=ALGORITHM)
     return token
 
 
-def decode_access_token(token: str) -> UUID:
+def decode_access_token(token: str) -> tuple[UUID, UUID]:
     payload = jwt.decode(token, settings.backend_secret_key, algorithms=[ALGORITHM])
-    return UUID(str(payload["sub"]))
+    return UUID(str(payload["sub"])), UUID(str(payload["cid"]))

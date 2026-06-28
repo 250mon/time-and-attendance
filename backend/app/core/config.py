@@ -12,7 +12,11 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     backend_url: str = "http://localhost:8000"
     clinic_timezone: str = "Asia/Seoul"
+    multi_tenant_enabled: bool = False
+    clinic_bootstrap_secret: str = ""
+    platform_admin_secret: str = ""
     seed_clinic_name: str = "Demo Clinic"
+    seed_clinic_slug: str = "demo"
     seed_admin_email: str = "admin@clinic.example"
     seed_admin_password: str = "ChangeMe123!"
     seed_admin_name: str = "Clinic Admin"

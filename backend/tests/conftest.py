@@ -1,3 +1,4 @@
+import os
 from collections.abc import Generator
 from uuid import uuid4
 
@@ -11,12 +12,11 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.clinic import Clinic
-from app.models.enums import EmploymentType, UserRole, UserStatus
+from app.models.enums import ClinicStatus, EmploymentType, UserRole, UserStatus
 from app.models.user import User
 
-TEST_DATABASE_URL = (
-    "postgresql+psycopg://clinic_time_user:change_me@localhost:5432/clinic_time_test"
-)
+_default_test_url = "postgresql+psycopg://clinic_time_user:change_me@localhost:5432/clinic_time_test"
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", _default_test_url)
 
 
 @pytest.fixture(scope="session")
@@ -32,7 +32,13 @@ def db_session(engine) -> Generator[Session, None, None]:
     Base.metadata.create_all(bind=engine)
 
     session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()
-    clinic = Clinic(id=uuid4(), name="Test Clinic", timezone="Asia/Seoul")
+    clinic = Clinic(
+        id=uuid4(),
+        name="Test Clinic",
+        slug="test-clinic",
+        status=ClinicStatus.ACTIVE,
+        timezone="Asia/Seoul",
+    )
     session.add(clinic)
     session.flush()
 
@@ -86,7 +92,7 @@ def db_session(engine) -> Generator[Session, None, None]:
 
 @pytest.fixture(autouse=True)
 def disable_startup_seed(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.main.seed_default_clinic_and_admin", lambda _db: None)
+    monkeypatch.setattr("app.main.run_startup_seed", lambda _db: None)
 
 
 @pytest.fixture
@@ -100,6 +106,9 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     app.dependency_overrides.clear()
 
 
-def login(client: TestClient, email: str, password: str) -> None:
-    response = client.post("/auth/login", json={"email": email, "password": password})
+def login(client: TestClient, email: str, password: str, clinic_slug: str | None = None) -> None:
+    payload: dict = {"email": email, "password": password}
+    if clinic_slug:
+        payload["clinic_slug"] = clinic_slug
+    response = client.post("/auth/login", json=payload)
     assert response.status_code == 200, response.text

@@ -1,6 +1,11 @@
 from enum import StrEnum
 
 
+class ClinicStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+
+
 class UserRole(StrEnum):
     OWNER = "OWNER"
     ADMIN = "ADMIN"

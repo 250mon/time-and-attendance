@@ -67,9 +67,10 @@ Phase 7: Leave balance engine
 Phase 8: Reports and exports
 Phase 9: Monthly closing and audit log
 Phase 10: Testing, deployment, and hardening
+Phase 11: Multi-tenant (multi-clinic) — see docs/5_MultiTenantPlan.md
 ```
 
-Do not start with payroll integration, GPS, QR code, or biometric integration. Those should be post-MVP enhancements.
+Do not start with payroll integration, GPS, QR code, or biometric integration. Those should be post-MVP enhancements. Phase 11 can begin after Phase 10 exit criteria are met.
 
 ------
 
@@ -215,6 +216,8 @@ users
 ```text
 id
 name
+slug              -- Phase 11: unique, URL-safe tenant identifier
+status            -- Phase 11: ACTIVE | SUSPENDED
 timezone
 address
 ip_whitelist
@@ -239,6 +242,8 @@ status
 created_at
 updated_at
 ```
+
+**Phase 11:** enforce `UNIQUE (clinic_id, email)` instead of global email uniqueness.
 
 Recommended role enum:
 
@@ -1921,7 +1926,54 @@ This gives a good balance of usability and anti-fraud control without biometric 
 
 ------
 
-# 28. Final Development Principle
+# 28. Phase 11 — Multi-Tenant (Multi-Clinic)
+
+Full plan: [5_MultiTenantPlan.md](5_MultiTenantPlan.md). Backlog: `CT-1101`–`CT-1110`.
+
+## 28.1 Tenancy rules
+
+```text
+Every tenant-owned row has clinic_id.
+Services never trust clinic_id from the request body — use actor.clinic_id.
+Login resolves tenant via clinic slug, then (clinic_id, email).
+JWT session is bound to one user in one clinic.
+```
+
+## 28.2 New endpoints
+
+```http
+GET   /clinics/by-slug/{slug}     # public metadata for login
+GET   /clinics/me                 # authenticated clinic profile
+PATCH /clinics/me                 # OWNER/ADMIN
+POST  /clinics                    # bootstrap / platform admin
+```
+
+## 28.3 Login payload (multi-tenant mode)
+
+```json
+{
+  "clinic_slug": "seoul-dental",
+  "email": "staff@example.com",
+  "password": "..."
+}
+```
+
+## 28.4 Configuration
+
+```text
+MULTI_TENANT_ENABLED=false   # single-clinic legacy mode
+MULTI_TENANT_ENABLED=true    # require clinic_slug at login
+SEED_CLINIC_SLUG=demo
+CLINIC_BOOTSTRAP_SECRET=...
+```
+
+## 28.5 Timezone
+
+Replace global `CLINIC_TIMEZONE` env usage in calculation services with `clinics.timezone` loaded per `actor.clinic_id`. Keep env var as default when seeding new clinics only.
+
+------
+
+# 29. Final Development Principle
 
 The most important architectural rule is:
 

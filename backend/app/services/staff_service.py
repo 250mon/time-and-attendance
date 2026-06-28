@@ -48,7 +48,11 @@ def create_staff_member(db: Session, actor: User, payload: StaffCreateRequest) -
     if payload.role in {UserRole.OWNER, UserRole.ADMIN} and actor.role != UserRole.OWNER:
         raise StaffError("Only owners can assign owner or admin roles")
 
-    existing = db.query(User).filter(User.email == payload.email.lower()).one_or_none()
+    existing = (
+        db.query(User)
+        .filter(User.clinic_id == actor.clinic_id, User.email == payload.email.lower())
+        .one_or_none()
+    )
     if existing is not None:
         raise StaffError("Email is already in use")
 
@@ -81,6 +85,7 @@ def update_staff_member(
         raise StaffError("Insufficient permissions")
 
     updates = payload.model_dump(exclude_unset=True)
+    hire_date_changed = "hire_date" in updates
 
     if "role" in updates and updates["role"] in {UserRole.OWNER, UserRole.ADMIN}:
         if actor.role != UserRole.OWNER:
@@ -94,7 +99,11 @@ def update_staff_member(
         normalized = updates["email"].lower()
         existing = (
             db.query(User)
-            .filter(User.email == normalized, User.id != user.id)
+            .filter(
+                User.clinic_id == actor.clinic_id,
+                User.email == normalized,
+                User.id != user.id,
+            )
             .one_or_none()
         )
         if existing is not None:
@@ -110,6 +119,10 @@ def update_staff_member(
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    if hire_date_changed:
+        assign_default_balances(db, user)
+
     return user
 
 

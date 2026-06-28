@@ -9,9 +9,10 @@ import openpyxl
 from openpyxl.styles import Font
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.clinic_time import clinic_tz
 from app.core.permissions import can_manage_schedules
 from app.models.attendance_day import AttendanceDay
+from app.models.clinic import Clinic
 from app.models.enums import AttendanceDayStatus
 from app.models.leave_balance import LeaveBalance
 from app.models.leave_type import LeaveType
@@ -19,10 +20,9 @@ from app.models.user import User
 from app.schemas.report import AttendanceSummaryRow, LeaveSummaryRow, MonthlyDetailRow
 
 
-def _to_clinic_tz(dt: datetime | None) -> datetime | None:
+def _to_clinic_tz(dt: datetime | None, tz: ZoneInfo) -> datetime | None:
     if dt is None:
         return None
-    tz = ZoneInfo(settings.clinic_timezone)
     return dt.astimezone(tz)
 
 
@@ -182,6 +182,9 @@ def monthly_detail(
     else:
         q = q.filter(AttendanceDay.user_id == actor.id)
 
+    clinic = db.get(Clinic, actor.clinic_id)
+    tz = clinic_tz(clinic.timezone if clinic else None)
+
     rows = q.order_by(User.name, AttendanceDay.work_date).all()
     return [
         MonthlyDetailRow(
@@ -189,8 +192,8 @@ def monthly_detail(
             user_id=d.user_id,
             user_name=u.name,
             status=d.status,
-            actual_clock_in=_to_clinic_tz(d.actual_clock_in),
-            actual_clock_out=_to_clinic_tz(d.actual_clock_out),
+            actual_clock_in=_to_clinic_tz(d.actual_clock_in, tz),
+            actual_clock_out=_to_clinic_tz(d.actual_clock_out, tz),
             worked_minutes=d.worked_minutes,
             worked_hours=round(d.worked_minutes / 60, 2),
             overtime_minutes=d.overtime_minutes,

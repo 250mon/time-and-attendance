@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from app.core.permissions import is_active_user
 from app.core.security import ACCESS_TOKEN_COOKIE, decode_access_token
 from app.db.session import get_db
-from app.models.enums import UserRole
+from app.models.clinic import Clinic
+from app.models.enums import ClinicStatus, UserRole
 from app.models.user import User
 
 
@@ -22,7 +23,7 @@ def get_current_user(
         )
 
     try:
-        user_id = decode_access_token(access_token)
+        user_id, clinic_id = decode_access_token(access_token)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -30,7 +31,14 @@ def get_current_user(
         ) from exc
 
     user = db.get(User, user_id)
-    if user is None or not is_active_user(user):
+    if user is None or not is_active_user(user) or user.clinic_id != clinic_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    clinic = db.get(Clinic, user.clinic_id)
+    if clinic is None or clinic.status != ClinicStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",

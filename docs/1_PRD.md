@@ -68,7 +68,7 @@ ClinicTime should solve these problems with a focused, low-friction system suita
 - Allow managers to approve or reject leave and correction requests.
 - Generate monthly attendance summaries.
 - Preserve audit history for all manual changes.
-- Support simple deployment for a single clinic.
+- Support simple deployment for a single clinic **or** multi-clinic SaaS on one instance (see [Multi-Tenant Plan](5_MultiTenantPlan.md)).
 
 ### 3.3 Non-Goals for MVP
 
@@ -159,10 +159,25 @@ Future versions may include:
 5. Public holiday calendar integration
 6. Overtime approval workflow
 7. Biometric device integration
-8. Multi-branch support
+8. Multi-branch support within one clinic
 9. Payroll vendor integration
 10. Native mobile app
 11. Advanced labor-rule engine
+
+### 5.3 Multi-Tenant Scope (Phase 11)
+
+After core MVP workflows are stable, support **multiple independent clinics** in one deployment:
+
+- Each clinic is a tenant; all data scoped by `clinic_id`.
+- Users log in with **clinic slug + email + password**.
+- Same email may exist in different clinics.
+- Per-clinic timezone drives attendance and leave calculations.
+- Clinic owners manage their clinic profile (name, timezone, address).
+- New clinics onboarded via bootstrap API (invite-only; no public signup in v1).
+
+Full technical plan: [5_MultiTenantPlan.md](5_MultiTenantPlan.md).
+
+**Not included in multi-tenant v1:** branches within a clinic, platform admin UI, public self-service registration, separate DB per tenant.
 
 ------
 
@@ -1067,7 +1082,7 @@ The MVP can be released when the following are complete:
 
 # 16. Open Questions
 
-1. Should the first version support only one clinic or multiple clinic branches?
+1. ~~Should the first version support only one clinic or multiple clinic branches?~~ **Resolved:** MVP remains single-clinic friendly; multi-clinic SaaS is Phase 11 ([5_MultiTenantPlan.md](5_MultiTenantPlan.md)). Multi-branch within one clinic remains post-MVP (CT-2006).
 2. Should part-time staff have different leave accrual rules?
 3. Should hourly leave be included in MVP or delayed?
 4. Should clock-in be allowed only from clinic Wi-Fi or allowed remotely?
@@ -1095,5 +1110,7 @@ For the first version, build a **single-clinic, mobile-responsive web app** with
 - Audit log
 
 Defer GPS, biometric integration, payroll integration, multi-branch support, and advanced labor-law automation until the product is stable in actual clinic use.
+
+**Multi-clinic SaaS** (multiple tenants in one deployment) is planned as **Phase 11** after MVP hardening — see [5_MultiTenantPlan.md](5_MultiTenantPlan.md). Existing single-clinic deployments can keep `MULTI_TENANT_ENABLED=false`.
 
 The product should prioritize simplicity, auditability, and reliable monthly reporting.

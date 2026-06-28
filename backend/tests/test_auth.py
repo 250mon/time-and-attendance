@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 from tests.conftest import login
@@ -103,3 +105,46 @@ def test_change_password_rejects_short_new_password(client: TestClient) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_login_with_valid_clinic_slug(client: TestClient) -> None:
+    response = client.post(
+        "/auth/login",
+        json={"email": "admin@test.example", "password": "AdminPass123", "clinic_slug": "test-clinic"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["email"] == "admin@test.example"
+
+
+def test_login_with_wrong_clinic_slug_rejected(client: TestClient) -> None:
+    response = client.post(
+        "/auth/login",
+        json={"email": "admin@test.example", "password": "AdminPass123", "clinic_slug": "no-such-clinic"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_login_requires_slug_in_multi_tenant_mode(client: TestClient) -> None:
+    with patch("app.services.auth_service.settings") as mock_settings:
+        mock_settings.multi_tenant_enabled = True
+        response = client.post(
+            "/auth/login",
+            json={"email": "admin@test.example", "password": "AdminPass123"},
+        )
+
+    assert response.status_code == 401
+    assert "required" in response.json()["detail"].lower()
+
+
+def test_auth_me_returns_clinic_summary(client: TestClient) -> None:
+    login(client, "admin@test.example", "AdminPass123")
+
+    response = client.get("/auth/me")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "clinic" in body
+    assert body["clinic"]["slug"] == "test-clinic"
+    assert body["clinic"]["name"] == "Test Clinic"

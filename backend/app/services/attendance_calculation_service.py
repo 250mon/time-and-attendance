@@ -13,17 +13,14 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.clinic_time import clinic_today, clinic_tz
 from app.models.attendance_correction import AttendanceCorrectionRequest
 from app.models.attendance_day import AttendanceDay
 from app.models.attendance_punch import AttendancePunch
+from app.models.clinic import Clinic
 from app.models.enums import AttendanceDayStatus, CorrectionStatus, LeaveStatus, PunchType, ScheduleStatus
 from app.models.leave_request import LeaveRequest
 from app.models.staff_schedule import StaffSchedule
-
-
-def _tz() -> ZoneInfo:
-    return ZoneInfo(settings.clinic_timezone)
 
 
 def _utc_day_bounds(d: date) -> tuple[datetime, datetime]:
@@ -31,9 +28,9 @@ def _utc_day_bounds(d: date) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
-def _scheduled_utc(work_date: date, t: time) -> datetime:
+def _scheduled_utc(work_date: date, t: time, tz: ZoneInfo) -> datetime:
     """Combine a work_date + local time-of-day into a UTC datetime."""
-    local = datetime(work_date.year, work_date.month, work_date.day, t.hour, t.minute, t.second, tzinfo=_tz())
+    local = datetime(work_date.year, work_date.month, work_date.day, t.hour, t.minute, t.second, tzinfo=tz)
     return local.astimezone(UTC)
 
 
@@ -43,6 +40,10 @@ def recalculate_attendance_day(
     user_id: UUID,
     work_date: date,
 ) -> AttendanceDay:
+    clinic = db.get(Clinic, clinic_id)
+    tz = clinic_tz(clinic.timezone if clinic else None)
+    today = clinic_today(clinic.timezone if clinic else None)
+
     schedule = (
         db.query(StaffSchedule)
         .filter(StaffSchedule.user_id == user_id, StaffSchedule.work_date == work_date)
@@ -89,8 +90,8 @@ def recalculate_attendance_day(
     scheduled_minutes: int | None = None
 
     if schedule and schedule.scheduled_start and schedule.scheduled_end:
-        sched_start_utc = _scheduled_utc(work_date, schedule.scheduled_start)
-        sched_end_utc = _scheduled_utc(work_date, schedule.scheduled_end)
+        sched_start_utc = _scheduled_utc(work_date, schedule.scheduled_start, tz)
+        sched_end_utc = _scheduled_utc(work_date, schedule.scheduled_end, tz)
         if schedule.scheduled_end < schedule.scheduled_start:
             # shift crosses midnight in local time
             sched_end_utc += timedelta(days=1)
@@ -136,7 +137,6 @@ def recalculate_attendance_day(
         early_leave_minutes = max(0, int((sched_end_utc - actual_clock_out).total_seconds() / 60))
 
     # Status
-    today = datetime.now(UTC).date()
     if schedule and schedule.status == ScheduleStatus.HOLIDAY:
         status = AttendanceDayStatus.HOLIDAY
     elif actual_clock_in is None:

@@ -77,6 +77,9 @@ api/
 models/           — SQLAlchemy 2.x ORM models; enums.py has UserRole/EmploymentType/UserStatus
 schemas/          — Pydantic v2 request/response schemas
 services/         — business logic (AuthService, StaffService, …)
+bootstrap/
+  seed.py         — run_startup_seed() calls seed_default_clinic_and_admin() + seed_default_leave_types() + seed_sample_staff(); all idempotent
+  leave_defaults.py — seed_default_leave_types(db, clinic_id): creates 7 KR-law leave types for any clinic; called on first boot and on new-clinic creation
 db/
   session.py      — engine + SessionLocal + get_db dependency
   base.py         — declarative Base
@@ -84,7 +87,7 @@ db/
 
 **Authentication** uses HTTP-only cookies (`access_token`). `POST /auth/login` sets the cookie and returns the user object. All protected routes depend on `get_current_user`; role guards use `require_roles(UserRole.ADMIN, ...)`.
 
-**Startup seed**: `app.main` lifespan calls `seed_default_clinic_and_admin` to create the demo clinic and admin on first boot (idempotent).
+**Startup seed**: `app.main` lifespan calls `bootstrap.seed.run_startup_seed(db)` — a single idempotent entry point. It creates the demo clinic + admin user (from `SEED_*` env vars), seeds the 7 default KR leave types for that clinic, and creates two sample staff members with leave balances. All three steps guard against re-running on non-empty DBs. Tests patch this at `app.main.run_startup_seed`.
 
 **Migrations**: Alembic, run `alembic upgrade head`. New models must be imported in `db/base.py` before generating revisions.
 
@@ -124,6 +127,7 @@ All API calls go through `lib/api-client.ts` using `withCredentials: true` so th
 - **Audit logging** is required for: corrections approved/rejected, leave approved/rejected/submitted (over-max policy warnings), balance adjustments, month lock/unlock, report exports.
 - **Annual leave only** receives yearly balance allocation (`tenure_based` leave types). Other leave types track usage only; `default_days_per_year` is max days per single request.
 - **Over-max non-annual requests** are allowed with `policy_warning` flags; managers see badges during review.
+- **Multi-tenant (Phase 11):** fully implemented (MT-1 through MT-6). Shared DB, `clinic_id` row-level isolation, per-clinic email uniqueness, JWT `cid` claim, per-clinic timezone, clinic slug login, `POST /clinics` onboarding, platform admin UI at `/platform`. See `docs/5_MultiTenantPlan.md`.
 
 ## Development Phase Status
 
@@ -138,6 +142,7 @@ Phases **0–1** (foundation, auth, staff) and parts of **6–7** (leave types, 
 8. Reports and exports
 9. Monthly closing and audit log
 10. Testing, deployment, hardening
+11. Multi-tenant (multi-clinic SaaS) — **implemented** (MT-1 through MT-6); see `docs/5_MultiTenantPlan.md`
 
 ## Naming Conventions
 
@@ -160,3 +165,8 @@ Key vars (see `.env.example` for production, `dev.env.example` for local dev):
 | `LEAVE_FISCAL_START_MONTH` / `LEAVE_FISCAL_START_DAY` | Fiscal year start (default Jan 1) |
 | `LEAVE_FISCAL_ROUNDING` | Fiscal proration rounding (`round_2` default) |
 | `LEAVE_ADJUSTMENT_MODE` | Legal top-up mode: `anniversary_top_up`, `termination_only`, `none` |
+| `MULTI_TENANT_ENABLED` | `true` requires clinic slug at login; `false` = single-clinic mode (default) |
+| `NEXT_PUBLIC_MULTI_TENANT_ENABLED` | Mirror of above for the Next.js frontend build |
+| `SEED_CLINIC_SLUG` | URL slug for bootstrap clinic (default `demo`) |
+| `CLINIC_BOOTSTRAP_SECRET` | Protects `POST /clinics` onboarding endpoint; empty = disabled |
+| `PLATFORM_ADMIN_SECRET` | Protects `/platform` admin UI; empty = disabled |

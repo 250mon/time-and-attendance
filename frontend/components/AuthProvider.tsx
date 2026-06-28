@@ -14,12 +14,12 @@ import {
   loginRequest,
   logoutRequest,
 } from "@/lib/api-client";
-import type { User, UserRole } from "@/types";
+import type { AuthUser, UserRole } from "@/types";
 
 type AuthContextValue = {
-  user: User | null;
+  user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, clinicSlug?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   hasRole: (...roles: UserRole[]) => boolean;
@@ -30,7 +30,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshUser = useCallback(async () => {
@@ -48,8 +48,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void refreshUser();
   }, [refreshUser]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const currentUser = await loginRequest(email, password);
+  const login = useCallback(async (email: string, password: string, clinicSlug?: string) => {
+    const currentUser = await loginRequest(email, password, clinicSlug);
     setUser(currentUser);
     setLoading(false);
   }, []);

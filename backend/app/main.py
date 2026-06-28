@@ -6,11 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import api_router
+from app.bootstrap.seed import run_startup_seed
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.middleware.logging_mw import RequestLoggingMiddleware
 from app.middleware.security import SecurityHeadersMiddleware
-from app.services.auth_service import seed_default_clinic_and_admin, seed_default_leave_types, seed_sample_staff
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -24,9 +24,7 @@ logger = logging.getLogger("clinictime")
 async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
-        seed_default_clinic_and_admin(db)
-        seed_default_leave_types(db)
-        seed_sample_staff(db)
+        run_startup_seed(db)
     finally:
         db.close()
     yield

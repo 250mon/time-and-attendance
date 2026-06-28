@@ -45,65 +45,10 @@ def _get_balances(client: TestClient, user_id: str | None = None, year: int | No
 
 
 # ---------------------------------------------------------------------------
-# Balance auto-creation
+# Balance deduction / restoration (non-annual: usage tracking, not allocation)
 # ---------------------------------------------------------------------------
-
-def test_balance_auto_created_on_leave_submission(client: TestClient) -> None:
-    lt = _create_leave_type(client, days=15)
-    login(client, "staff@test.example", "StaffPass123")
-
-    _submit_request(client, lt["id"], NEXT_WEEK_START, NEXT_WEEK_END)
-
-    login(client, "manager@test.example", "ManagerPass123")
-    resp = client.get("/auth/me")
-    manager_id = resp.json()["id"]
-
-    login(client, "staff@test.example", "StaffPass123")
-    resp = client.get("/auth/me")
-    staff_id = resp.json()["id"]
-
-    balances = _get_balances(client, user_id=staff_id, year=YEAR)
-    assert len(balances) == 1
-    assert balances[0]["leave_type_id"] == lt["id"]
-    assert balances[0]["balance_days"] == 15.0
-    assert balances[0]["used_days"] == 0.0
-    assert balances[0]["remaining_days"] == 15.0
-
-
-def test_balance_uses_leave_type_default(client: TestClient) -> None:
-    lt = _create_leave_type(client, name="Sick Leave", days=10)
-    login(client, "staff@test.example", "StaffPass123")
-
-    _submit_request(client, lt["id"], NEXT_WEEK_START, NEXT_WEEK_END)
-
-    resp = client.get("/auth/me")
-    staff_id = resp.json()["id"]
-    balances = _get_balances(client, user_id=staff_id, year=YEAR)
-
-    sick_balance = next(b for b in balances if b["leave_type_id"] == lt["id"])
-    assert sick_balance["balance_days"] == 10.0
-
-
-# ---------------------------------------------------------------------------
-# Balance enforcement
-# ---------------------------------------------------------------------------
-
-def test_insufficient_balance_blocks_submission(client: TestClient) -> None:
-    # Leave type with only 2 days; request needs 3 days
-    lt = _create_leave_type(client, name="Short Leave", days=2)
-    login(client, "staff@test.example", "StaffPass123")
-
-    resp = client.post("/leave/requests", json={
-        "leave_type_id": lt["id"],
-        "start_date": NEXT_WEEK_START,
-        "end_date": NEXT_WEEK_END,
-    })
-    assert resp.status_code == 400
-    assert "Not enough leave balance" in resp.json()["detail"]
-
 
 def test_exact_balance_is_allowed(client: TestClient) -> None:
-    # Exactly 3 days available, 3 requested
     lt = _create_leave_type(client, name="Exact Balance Leave", days=3)
     login(client, "staff@test.example", "StaffPass123")
 
@@ -115,11 +60,7 @@ def test_exact_balance_is_allowed(client: TestClient) -> None:
     assert resp.status_code == 201
 
 
-# ---------------------------------------------------------------------------
-# Balance deduction / restoration
-# ---------------------------------------------------------------------------
-
-def test_approve_leave_deducts_balance(client: TestClient) -> None:
+def test_manager_cancel_approved_leave_restores_usage(client: TestClient) -> None:
     lt = _create_leave_type(client, days=15)
     login(client, "staff@test.example", "StaffPass123")
     resp = client.get("/auth/me")
@@ -129,55 +70,7 @@ def test_approve_leave_deducts_balance(client: TestClient) -> None:
     login(client, "manager@test.example", "ManagerPass123")
     client.post(f"/leave/requests/{req['id']}/approve", json={})
 
-    login(client, "staff@test.example", "StaffPass123")
-    balances = _get_balances(client, user_id=staff_id, year=YEAR)
-    b = next(x for x in balances if x["leave_type_id"] == lt["id"])
-    assert b["used_days"] == 3.0
-    assert b["remaining_days"] == 12.0
-
-
-def test_reject_leave_does_not_affect_balance(client: TestClient) -> None:
-    lt = _create_leave_type(client, days=15)
-    login(client, "staff@test.example", "StaffPass123")
-    resp = client.get("/auth/me")
-    staff_id = resp.json()["id"]
-    req = _submit_request(client, lt["id"], NEXT_WEEK_START, NEXT_WEEK_END)
-
-    login(client, "manager@test.example", "ManagerPass123")
-    client.post(f"/leave/requests/{req['id']}/reject", json={})
-
-    login(client, "staff@test.example", "StaffPass123")
-    balances = _get_balances(client, user_id=staff_id, year=YEAR)
-    b = next(x for x in balances if x["leave_type_id"] == lt["id"])
-    assert b["used_days"] == 0.0
-    assert b["remaining_days"] == 15.0
-
-
-def test_cancel_pending_does_not_affect_balance(client: TestClient) -> None:
-    lt = _create_leave_type(client, days=15)
-    login(client, "staff@test.example", "StaffPass123")
-    resp = client.get("/auth/me")
-    staff_id = resp.json()["id"]
-    req = _submit_request(client, lt["id"], NEXT_WEEK_START, NEXT_WEEK_END)
-
-    client.delete(f"/leave/requests/{req['id']}")
-
-    balances = _get_balances(client, user_id=staff_id, year=YEAR)
-    b = next(x for x in balances if x["leave_type_id"] == lt["id"])
-    assert b["used_days"] == 0.0
-
-
-def test_manager_cancel_approved_leave_restores_balance(client: TestClient) -> None:
-    lt = _create_leave_type(client, days=15)
-    login(client, "staff@test.example", "StaffPass123")
-    resp = client.get("/auth/me")
-    staff_id = resp.json()["id"]
-    req = _submit_request(client, lt["id"], NEXT_WEEK_START, NEXT_WEEK_END)
-
-    login(client, "manager@test.example", "ManagerPass123")
-    client.post(f"/leave/requests/{req['id']}/approve", json={})
-
-    # Verify deducted
+    # Verify usage recorded after approval
     login(client, "staff@test.example", "StaffPass123")
     balances = _get_balances(client, user_id=staff_id, year=YEAR)
     b = next(x for x in balances if x["leave_type_id"] == lt["id"])
@@ -188,98 +81,16 @@ def test_manager_cancel_approved_leave_restores_balance(client: TestClient) -> N
     resp = client.delete(f"/leave/requests/{req['id']}")
     assert resp.status_code == 200
 
-    # Balance restored
+    # Usage restored to zero
     login(client, "staff@test.example", "StaffPass123")
     balances = _get_balances(client, user_id=staff_id, year=YEAR)
     b = next(x for x in balances if x["leave_type_id"] == lt["id"])
     assert b["used_days"] == 0.0
-    assert b["remaining_days"] == 15.0
-
-
-def test_second_request_blocked_after_first_exhausts_balance(client: TestClient) -> None:
-    lt = _create_leave_type(client, name="Limited Leave", days=3)
-    login(client, "staff@test.example", "StaffPass123")
-
-    # First request uses all 3 days (approved)
-    req = _submit_request(client, lt["id"], NEXT_WEEK_START, NEXT_WEEK_END)
-    login(client, "manager@test.example", "ManagerPass123")
-    client.post(f"/leave/requests/{req['id']}/approve", json={})
-
-    # Second request should fail — balance exhausted
-    login(client, "staff@test.example", "StaffPass123")
-    resp = client.post("/leave/requests", json={
-        "leave_type_id": lt["id"],
-        "start_date": NEXT_MONTH_START,
-        "end_date": NEXT_MONTH_END,
-    })
-    assert resp.status_code == 400
-    assert "Not enough leave balance" in resp.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
 # Manual adjustment
 # ---------------------------------------------------------------------------
-
-def test_manager_can_increase_balance(client: TestClient) -> None:
-    lt = _create_leave_type(client, days=10)
-    login(client, "staff@test.example", "StaffPass123")
-    resp = client.get("/auth/me")
-    staff_id = resp.json()["id"]
-
-    # Trigger balance creation
-    _submit_request(client, lt["id"], NEXT_WEEK_START, NEXT_WEEK_END)
-
-    login(client, "manager@test.example", "ManagerPass123")
-    resp = client.post("/leave/balances/adjust", json={
-        "user_id": staff_id,
-        "leave_type_id": lt["id"],
-        "year": YEAR,
-        "delta_days": 5,
-        "reason": "Performance bonus",
-    })
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["balance_days"] == 15.0
-    assert data["remaining_days"] == 15.0
-
-
-def test_manager_can_decrease_balance(client: TestClient) -> None:
-    lt = _create_leave_type(client, days=15)
-    login(client, "staff@test.example", "StaffPass123")
-    resp = client.get("/auth/me")
-    staff_id = resp.json()["id"]
-    _submit_request(client, lt["id"], NEXT_WEEK_START, NEXT_WEEK_END)
-
-    login(client, "manager@test.example", "ManagerPass123")
-    resp = client.post("/leave/balances/adjust", json={
-        "user_id": staff_id,
-        "leave_type_id": lt["id"],
-        "year": YEAR,
-        "delta_days": -5,
-        "reason": "Correction",
-    })
-    assert resp.status_code == 200
-    assert resp.json()["balance_days"] == 10.0
-
-
-def test_adjust_blocked_when_would_go_negative(client: TestClient) -> None:
-    lt = _create_leave_type(client, days=5)
-    login(client, "staff@test.example", "StaffPass123")
-    resp = client.get("/auth/me")
-    staff_id = resp.json()["id"]
-    _submit_request(client, lt["id"], NEXT_WEEK_START, NEXT_WEEK_END)
-
-    login(client, "manager@test.example", "ManagerPass123")
-    resp = client.post("/leave/balances/adjust", json={
-        "user_id": staff_id,
-        "leave_type_id": lt["id"],
-        "year": YEAR,
-        "delta_days": -10,
-        "reason": "Oops",
-    })
-    assert resp.status_code == 400
-    assert "negative" in resp.json()["detail"].lower()
-
 
 def test_staff_cannot_adjust_balance(client: TestClient) -> None:
     lt = _create_leave_type(client, days=15)
@@ -360,6 +171,10 @@ def test_list_balances_year_filter(client: TestClient) -> None:
     assert resp.status_code == 200
     assert resp.json() == []
 
+
+# ---------------------------------------------------------------------------
+# Non-annual leave: per-request cap and usage tracking
+# ---------------------------------------------------------------------------
 
 def test_non_annual_leave_warns_when_exceeding_per_request_max(client: TestClient) -> None:
     """Non-annual types warn (but allow) when a request exceeds the per-request maximum."""

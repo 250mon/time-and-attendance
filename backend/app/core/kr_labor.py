@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from typing import cast
 
+from app.core.clinic_time import clinic_today
 from app.core.config import settings
 from app.core.leave_accrual import (
     AdjustmentMode,
@@ -73,7 +74,7 @@ def annual_leave_for_calendar_year(
         fiscal_rounding=fiscal_rounding,
         adjustment_mode=adjustment_mode,
     )
-    today = as_of or date.today()
+    today = as_of or clinic_today()
 
     year_start = date(year, 1, 1)
     year_end = date(year, 12, 31)
@@ -129,7 +130,7 @@ def annual_leave_for_calendar_year(
 
 def as_of_date_for_balance_year(year: int, today: date | None = None) -> date:
     """Pick the reference date for recalculating a calendar-year balance."""
-    today = today or date.today()
+    today = today or clinic_today()
     if year < today.year:
         return date(year, 12, 31)
     if year == today.year:
